@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-4">数据概览</h4>
+
+<!-- 未上传提示 -->
+<div id="no-data-alert" class="alert alert-info d-none">
+    <i class="bi bi-info-circle me-2"></i>请先上传数据文件（支持 CSV / Excel / JSON）
+</div>
+
+<!-- 指标卡片行 -->
+<div id="stats-section" class="metrics-grid" style="display:none!important">
+    <div class="metric-card" style="--accent-line: linear-gradient(90deg,#4F9FFF,#00D4FF)">
+        <div class="metric-icon" style="background:rgba(79,159,255,.13);color:#4F9FFF">
+            <i class="bi bi-table"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="stat-rows">—</div>
+            <div class="metric-label">总记录数</div>
+        </div>
+    </div>
+    <div class="metric-card" style="--accent-line: linear-gradient(90deg,#A78BFA,#7C3AED)">
+        <div class="metric-icon" style="background:rgba(167,139,250,.13);color:#A78BFA">
+            <i class="bi bi-layout-three-columns"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="stat-cols">—</div>
+            <div class="metric-label">字段数</div>
+        </div>
+    </div>
+    <div class="metric-card" style="--accent-line: linear-gradient(90deg,#00D4FF,#0EA5E9)">
+        <div class="metric-icon" style="background:rgba(0,212,255,.12);color:#00D4FF">
+            <i class="bi bi-calendar-range"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="stat-daterange" style="font-size:1rem">—</div>
+            <div class="metric-label">时间跨度</div>
+        </div>
+    </div>
+    <div class="metric-card" style="--accent-line: linear-gradient(90deg,#FFB347,#FF8C00)">
+        <div class="metric-icon" style="background:rgba(255,179,71,.13);color:#FFB347">
+            <i class="bi bi-currency-dollar"></i>
+        </div>
+        <div>
+            <div class="metric-value" id="stat-revenue" style="font-size:1.4rem">—</div>
+            <div class="metric-label">总销售额</div>
+        </div>
+    </div>
+</div>
+
+<!-- 预处理摘要 -->
+<div id="preprocess-section" class="card mb-4" style="display:none">
+    <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-gear" style="color:var(--cyan)"></i>
+        预处理摘要
+    </div>
+    <div class="card-body p-0">
+        <div class="prep-timeline px-4 py-2" id="prep-timeline"></div>
+    </div>
+</div>
+
+<!-- 数据预览 -->
+<div id="preview-section" class="card" style="display:none">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="d-flex align-items-center gap-2">
+            <i class="bi bi-eye" style="color:var(--blue)"></i>数据预览
+        </span>
+        <span class="badge bg-secondary" id="preview-badge">0 行</span>
+    </div>
+    <div class="card-body p-0 overflow-auto" style="max-height:420px">
+        <table class="table table-sm table-hover mb-0" id="preview-table">
+            <thead class="sticky-top"><tr></tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.initOverviewPage = async function () {
+    try {
+        const [sRes, pRes, prepRes] = await Promise.all([
+            fetch("/api/data/summary"),
+            fetch("/api/data/preview?n=50"),
+            fetch("/api/data/preprocess-report"),
+        ]);
+        if (!sRes.ok) {
+            document.getElementById("no-data-alert").classList.remove("d-none");
+            return;
+        }
+        document.getElementById("no-data-alert").classList.add("d-none");
+
+        const summary = await sRes.json();
+        const preview = await pRes.json();
+        const prep    = await prepRes.json();
+
+        renderMetrics(summary);
+        renderPrepTimeline(prep);
+        renderPreviewTable(preview);
+
+        // Animate the metrics grid in
+        const statsEl = document.getElementById("stats-section");
+        statsEl.style.removeProperty("display");
+        statsEl.querySelectorAll(".metric-card").forEach((el, i) => {
+            el.style.opacity = "0";
+            el.style.transform = "translateY(16px)";
+            setTimeout(() => {
+                el.style.transition = "all 0.4s cubic-bezier(.4,0,.2,1)";
+                el.style.opacity = "1";
+                el.style.transform = "translateY(0)";
+            }, i * 80);
+        });
+
+        document.getElementById("preprocess-section").style.display = "block";
+        document.getElementById("preview-section").style.display    = "block";
+    } catch (e) {
+        console.error("概览页加载失败:", e);
+    }
+};
+
+function renderMetrics(s) {
+    // Animate counter
+    function animateNum(el, target, decimals = 0) {
+        if (isNaN(target)) { el.textContent = target; return; }
+        let start = 0, duration = 800, step = 16;
+        let timer = setInterval(() => {
+            start = Math.min(start + target * step / duration, target);
+            el.textContent = start.toLocaleString(undefined, { maximumFractionDigits: decimals });
+            if (start >= target) clearInterval(timer);
+        }, step);
+    }
+
+    animateNum(document.getElementById("stat-rows"), s.row_count || 0);
+    animateNum(document.getElementById("stat-cols"), s.column_count || 0);
+
+    const dr = s.date_range || {};
+    document.getElementById("stat-daterange").textContent =
+        dr.start ? `${dr.start.slice(0,10)} ~ ${(dr.end||"").slice(0,10)}` : "—";
+
+    const ns = s.numeric_stats || {};
+    const amtKey = Object.keys(ns).find(k => /amount|total|revenue/i.test(k));
+    if (amtKey && ns[amtKey].sum != null) {
+        animateNum(document.getElementById("stat-revenue"), Number(ns[amtKey].sum), 0);
+    }
+}
+
+function renderPrepTimeline(prep) {
+    const steps = [
+        ["去重",           prep.remove_duplicates?.removed != null
+            ? `移除 <strong>${prep.remove_duplicates.removed.toLocaleString()}</strong> 条重复记录` : "无"],
+        ["缺失值处理", (() => {
+            const m   = prep.handle_missing || {};
+            const f   = Object.keys(m.filled_cols || {}).length;
+            const d   = (m.high_missing_cols || []).length;
+            return `填充 <strong>${f}</strong> 列，删除 <strong>${d}</strong> 高缺失列`;
+        })()],
+        ["类型转换",       (() => {
+            const c = Object.keys(prep.convert_types?.converted || {}).length;
+            return c ? `转换 <strong>${c}</strong> 列` : "无需转换";
+        })()],
+        ["无效记录",       prep.filter_invalid_records?.removed != null
+            ? `过滤 <strong>${prep.filter_invalid_records.removed.toLocaleString()}</strong> 条无效记录` : "—"],
+        ["异常值",         prep.filter_outliers?.flagged != null
+            ? `标记 <strong>${prep.filter_outliers.flagged}</strong> 个异常值` : "—"],
+        ["新增特征",       (() => {
+            const a = prep.add_features?.added || [];
+            return a.length ? a.map(f => `<span class="badge bg-secondary me-1">${f}</span>`).join("") : "无";
+        })()],
+        ["最终记录数",     prep.final_rows != null
+            ? `<strong style="color:var(--green)">${prep.final_rows.toLocaleString()}</strong> 条` : "—"],
+    ];
+    document.getElementById("prep-timeline").innerHTML = steps.map(([name, val]) => `
+        <div class="prep-step">
+            <div class="prep-dot"></div>
+            <span class="prep-step-name">${name}</span>
+            <span class="prep-step-val">${val}</span>
+        </div>
+    `).join("");
+}
+
+function renderPreviewTable(rows) {
+    if (!rows?.length) return;
+    const table = document.getElementById("preview-table");
+    const cols  = Object.keys(rows[0]);
+    table.querySelector("thead tr").innerHTML = cols.map(c => `<th>${c}</th>`).join("");
+    table.querySelector("tbody").innerHTML    = rows.map(row =>
+        `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`
+    ).join("");
+    document.getElementById("preview-badge").textContent = `${rows.length} 行`;
+}
+
+window.initOverviewPage();
+</script>
+{% endblock %}

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataMind — 智能问数平台</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+    <!-- Highlight.js -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!--
+      早期 sessionStorage 检测：在任何 HTML 渲染之前执行，
+      防止非首次访问时 splash 出现一帧闪烁。
+    -->
+    <script>
+      if (sessionStorage.getItem('dm_splash_shown')) {
+        document.documentElement.classList.add('dm-no-splash');
+      }
+    </script>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════
+     Hero Splash 封面 (z-index: 200)  —  仅会话首次展示
+     ════════════════════════════════════════════════════════════════ -->
+<div id="hero-splash">
+    <!-- 全屏背景视频 -->
+    <video class="hero-video-bg" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+        <source src="{{ url_for('static', filename='videos/hero-bg.mp4') }}" type="video/mp4">
+    </video>
+    <!-- 渐变遮罩：保证文字可读 + 底部自然过渡 -->
+    <div class="hero-video-overlay" aria-hidden="true"></div>
+
+    <!-- 胶囊导航栏 -->
+    <nav class="hero-nav">
+        <a class="hero-brand" href="/">
+            <img src="{{ url_for('static', filename='favicon.png') }}" alt="DataMind">
+            DataMind
+        </a>
+
+        <div class="hero-nav-pills">
+            <a href="/"              class="hero-pill">数据概览</a>
+            <a href="/analysis"      class="hero-pill">智能问答</a>
+            <a href="/visualization" class="hero-pill">可视化</a>
+            <a href="/report"        class="hero-pill">分析报告</a>
+        </div>
+
+        <button class="hero-cta-nav" id="hero-enter-nav">进入系统</button>
+    </nav>
+
+    <!-- 主内容 -->
+    <div class="hero-content">
+        <h1 class="hero-title">
+            智能问数系统
+            <span class="hero-title-line2">让数据触手可及</span>
+        </h1>
+
+        <p class="hero-desc">
+            上传数据 · 自然语言提问 · AI 实时洞察<br>
+            交互图表 · 一键生成分析报告
+        </p>
+
+        <button class="hero-cta-btn" id="hero-enter-main">
+            开始探索
+            <svg class="hero-arrow" width="15" height="15" viewBox="0 0 24 24"
+                 fill="none" stroke="currentColor" stroke-width="2.2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"/>
+                <polyline points="12 5 19 12 12 19"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- 底部提示 -->
+    <div class="hero-bottom-hint">
+        <span>进入系统</span>
+        <div class="hero-scroll-line"></div>
+    </div>
+</div>
+
+<!-- ── 全局拖拽上传遮罩 (z-index: 9990) ────────────────────────── -->
+<div id="drag-overlay" aria-live="polite">
+    <div class="drag-overlay-inner">
+        <i class="bi bi-cloud-upload drag-overlay-icon"></i>
+        <p class="drag-overlay-title">释放以上传数据</p>
+        <p class="drag-overlay-tip">支持 CSV / Excel / JSON，最大 50 MB</p>
+    </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     背景层 (z-index: 0~1)  —  装饰性元素，不参与交互
+     ════════════════════════════════════════════════════════════════ -->
+
+<!-- 粒子画布 -->
+<canvas id="particle-canvas" aria-hidden="true"></canvas>
+
+<!-- 电路网格 -->
+<div class="circuit-grid" aria-hidden="true"></div>
+
+<!-- 星云光晕 -->
+<div class="bg-orbs" aria-hidden="true">
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+    <div class="bg-orb bg-orb-4"></div>
+</div>
+
+<!-- 全息旋转立方体 -->
+<div class="holo-cube-wrapper" aria-hidden="true">
+    <div class="holo-cube">
+        <div class="cube-face face-front"></div>
+        <div class="cube-face face-back"></div>
+        <div class="cube-face face-left"></div>
+        <div class="cube-face face-right"></div>
+        <div class="cube-face face-top"></div>
+        <div class="cube-face face-bottom"></div>
+    </div>
+</div>
+
+<!-- 脉冲同心环 -->
+<div class="ring-system" aria-hidden="true">
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+    <div class="pulse-ring"></div>
+</div>
+
+<!--
+    hero-bg 常驻环境背景视频 (z-index: 0)
+    全局所有页面均显示，screen 混合模式令暗色背景消融，
+    为整个 app 营造科技氛围感。
+-->
+<div class="app-video-bg" aria-hidden="true">
+    <video autoplay muted loop playsinline preload="auto">
+        <source src="{{ url_for('static', filename='videos/hero-bg.mp4') }}" type="video/mp4">
+    </video>
+</div>
+
+<!--
+    机械女孩赛博朋克背景视频 (z-index: 1)
+    右侧人物全息投影，mix-blend-mode: screen。
+-->
+<div class="mech-video-bg" aria-hidden="true">
+    <video autoplay muted loop playsinline preload="auto">
+        <source src="{{ url_for('static', filename='videos/mech-girl.mp4') }}" type="video/mp4">
+    </video>
+    <div class="mech-scanlines"></div>
+    <div class="mech-glow-edge"></div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     UI 层 (z-index: 2 / 100)
+     ════════════════════════════════════════════════════════════════ -->
+
+<!-- 顶部导航栏 -->
+<nav class="topbar">
+    <a class="dm-brand" href="/">
+        <div class="dm-brand-icon-wrap">
+            <div class="dm-brand-icon-ring"></div>
+            <div class="dm-brand-icon">
+                <i class="bi bi-bar-chart-fill"></i>
+            </div>
+        </div>
+        DataMind
+    </a>
+
+    <span id="dataset-status">未上传数据</span>
+
+    <div class="ms-auto d-flex align-items-center gap-2">
+        <label class="btn-upload" for="file-upload">
+            <i class="bi bi-upload"></i>上传数据
+        </label>
+        <input type="file" id="file-upload" accept=".csv,.xlsx,.json" class="d-none">
+        <a href="/report" class="btn-report">
+            <i class="bi bi-file-earmark-text"></i>生成报告
+        </a>
+        <!-- AI 服务配置入口 -->
+        <button class="btn-ai-settings" id="btn-open-ai-settings" title="AI 服务配置">
+            <i class="bi bi-cpu"></i>
+            <span id="ai-settings-dot" class="ai-dot unconfigured"></span>
+        </button>
+    </div>
+</nav>
+
+<!-- ════════════════════════════════════════════════════════════════
+     AI 服务配置 Modal (z-index: 1000)
+     ════════════════════════════════════════════════════════════════ -->
+<div id="ai-settings-modal" class="ai-modal-backdrop" aria-hidden="true">
+  <div class="ai-modal-box" role="dialog" aria-labelledby="ai-modal-title">
+
+    <!-- 标题栏 -->
+    <div class="ai-modal-header">
+      <div class="ai-modal-title-wrap">
+        <i class="bi bi-cpu-fill"></i>
+        <span id="ai-modal-title">AI 服务配置</span>
+      </div>
+      <button class="ai-modal-close" id="btn-close-ai-settings" aria-label="关闭">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+
+    <!-- 服务商快速选择 -->
+    <div class="ai-modal-body">
+      <p class="ai-section-label">选择服务商</p>
+      <div class="ai-provider-grid" id="ai-provider-grid">
+        <!-- 由 JS 动态渲染 -->
+      </div>
+
+      <!-- Ollama 本地部署说明（仅选中 Ollama 时显示） -->
+      <div id="ollama-tips" class="ollama-tips-box" style="display:none">
+        <div class="ollama-tips-title">
+          <i class="bi bi-box-seam"></i> Ollama 本地免费模式
+        </div>
+        <ol class="ollama-tips-list">
+          <li>确认 Ollama 已安装并在后台运行（任务栏有 🦙 图标）</li>
+          <li>确认已下载模型，命令示例：<code>ollama pull qwen3:8b</code></li>
+          <li>Base URL 和 API Key 已自动填写，<strong>直接点「测试连接」</strong>验证即可</li>
+          <li>测试成功后点「保存配置」，然后上传数据开始使用</li>
+        </ol>
+        <div class="ollama-tips-check">
+          <i class="bi bi-check-circle-fill" style="color:#00E5A0"></i>
+          无需注册 · 无需联网 · 完全免费 · 数据不出本机
+        </div>
+      </div>
+
+      <!-- Base URL -->
+      <p class="ai-section-label" style="margin-top:20px">Base URL</p>
+      <div class="ai-input-wrap">
+        <i class="bi bi-link-45deg ai-input-icon"></i>
+        <input type="text" id="ai-base-url" class="ai-input"
+               placeholder="https://api.openai.com/v1" autocomplete="off">
+      </div>
+
+      <!-- API Key -->
+      <p class="ai-section-label" style="margin-top:14px">API Key</p>
+      <div class="ai-input-wrap">
+        <i class="bi bi-key ai-input-icon"></i>
+        <input type="password" id="ai-api-key" class="ai-input"
+               placeholder="sk-..." autocomplete="off">
+        <button class="ai-key-toggle" id="ai-key-toggle" title="显示/隐藏">
+          <i class="bi bi-eye" id="ai-key-eye"></i>
+        </button>
+      </div>
+
+      <!-- 模型 -->
+      <p class="ai-section-label" style="margin-top:14px">模型</p>
+      <div class="ai-input-wrap">
+        <i class="bi bi-robot ai-input-icon"></i>
+        <input type="text" id="ai-model" class="ai-input"
+               placeholder="gpt-4o-mini" autocomplete="off" list="ai-model-list">
+        <datalist id="ai-model-list"></datalist>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="ai-modal-actions">
+        <button class="ai-btn-test" id="ai-btn-test">
+          <i class="bi bi-wifi"></i>测试连接
+        </button>
+        <button class="ai-btn-save" id="ai-btn-save">
+          <i class="bi bi-check2"></i>保存配置
+        </button>
+      </div>
+
+      <!-- 状态提示 -->
+      <div id="ai-status-msg" class="ai-status-msg"></div>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex main-wrapper">
+    <!-- 侧边导航 -->
+    <nav class="sidebar">
+        <a href="/" class="nav-link {% if request.path == '/' %}active-nav{% endif %}">
+            <i class="bi bi-grid-1x2"></i>数据概览
+        </a>
+        <a href="/analysis" class="nav-link {% if request.path == '/analysis' %}active-nav{% endif %}">
+            <i class="bi bi-chat-dots"></i>智能问答
+        </a>
+        <a href="/visualization" class="nav-link {% if request.path == '/visualization' %}active-nav{% endif %}">
+            <i class="bi bi-graph-up"></i>可视化
+        </a>
+        <a href="/report" class="nav-link {% if request.path == '/report' %}active-nav{% endif %}">
+            <i class="bi bi-file-earmark-bar-graph"></i>报告
+        </a>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="flex-grow-1 p-4 overflow-auto">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- 洞察面板 -->
+    <aside class="insight-panel overflow-auto">
+        <div class="panel-title">
+            <i class="bi bi-lightning-fill"></i>自动洞察
+        </div>
+        <div id="insight-container">
+            <p class="text-muted small">上传数据后自动生成洞察</p>
+        </div>
+    </aside>
+</div>
+
+<!-- 状态栏 -->
+<footer class="statusbar">
+    <span id="status-rows"><i class="bi bi-table me-1"></i>-</span>
+    <span id="status-cols"><i class="bi bi-layout-three-columns me-1"></i>-</span>
+    <span id="status-ai"><i class="bi bi-robot me-1"></i>AI 就绪</span>
+</footer>
+
+<!-- Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bg-effects.js') }}"></script>
+<script src="{{ url_for('static', filename='js/fireworks.js') }}"></script>
+{% block scripts %}{% endblock %}
+
+<!-- ── Hero Splash 交互逻辑 ──────────────────────────────────── -->
+<script>
+(function () {
+  var STORAGE_KEY = 'dm_splash_shown';
+  var splash = document.getElementById('hero-splash');
+
+  /*
+   * 若 <head> 早期脚本已检测到标记，splash 的 display 已由 CSS 隐藏，
+   * 此处无需再处理，直接退出。
+   */
+  if (document.documentElement.classList.contains('dm-no-splash')) return;
+
+  /*
+   * 首次访问：
+   * - 立即写入标记，确保点击任意 pill 导航链接跳转后，
+   *   目标页的 <head> 早期脚本检测到标记并立即隐藏 splash，零闪烁。
+   * - pill 链接本身是纯 <a> 标签，无需额外 JS，浏览器原生跳转即可。
+   */
+  sessionStorage.setItem(STORAGE_KEY, '1');
+
+  /* "进入系统" 按钮：停留当前页，退场动效后隐藏遮罩 */
+  function dismissSplash() {
+    splash.classList.add('exit');
+    setTimeout(function () { splash.style.display = 'none'; }, 880);
+  }
+
+  document.getElementById('hero-enter-nav').addEventListener('click', dismissSplash);
+  document.getElementById('hero-enter-main').addEventListener('click', dismissSplash);
+})();
+</script>
+</body>
+</html>

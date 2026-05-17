@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <h4 class="mb-0">可视化仪表盘</h4>
+    <button class="btn btn-outline-secondary btn-sm" onclick="window.initVisualizationPage()" title="刷新图表">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<div id="no-data-alert" class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>请先上传数据文件
+</div>
+
+<div id="charts-section" style="display:none">
+    <div class="row g-4">
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-graph-up-arrow me-2" style="color:var(--blue)"></i>月度销售趋势</div>
+                <div class="card-body p-1"><div id="chart-sales-trend" style="height:290px"></div></div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-trophy me-2" style="color:var(--amber)"></i>Top 10 畅销商品</div>
+                <div class="card-body p-1"><div id="chart-top-products" style="height:290px"></div></div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-globe me-2" style="color:var(--cyan)"></i>国家销售分布</div>
+                <div class="card-body p-1"><div id="chart-country" style="height:290px"></div></div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-grid-3x3 me-2" style="color:var(--purple)"></i>相关性矩阵</div>
+                <div class="card-body p-1"><div id="chart-correlation" style="height:290px"></div></div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-clock me-2" style="color:var(--green)"></i>订单时间规律</div>
+                <div class="card-body p-1"><div id="chart-time-pattern" style="height:290px"></div></div>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="card chart-card">
+                <div class="card-header"><i class="bi bi-people me-2" style="color:var(--red)"></i>RFM 客户分布</div>
+                <div class="card-body p-1"><div id="chart-rfm" style="height:290px"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script>
+window.initVisualizationPage();
+</script>
+{% endblock %}

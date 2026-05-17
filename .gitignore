@@ -1,0 +1,59 @@
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── 虚拟环境 ──────────────────────────────────────────────────
+venv/
+env/
+.venv/
+.env
+
+# ── 敏感配置（含 API Key） ─────────────────────────────────────
+datasets/.ai_config.json
+datasets/.last_upload.json
+
+# ── 用户上传的数据文件（不属于源码）─────────────────────────────
+datasets/*.xlsx
+datasets/*.csv
+datasets/*.xls
+uploads/
+
+# ── 根目录遗留的临时文件 ───────────────────────────────────────
+*.crdownload
+flova_*.mp4
+hf_*.mp4
+4861e74492b196de632c8b8446fbf712.png
+
+# ── 根目录数据文件（非源码）──────────────────────────────────
+*.xlsx
+*.xls
+*.csv
+*.pdf
+
+# ── 测试缓存 ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Claude Code 本地设置（保留 skills/，排除本机配置）──────────
+.claude/settings.json
+.claude/__pycache__/
+
+# ── 系统文件 ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo

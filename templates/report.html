@@ -1,0 +1,546 @@
+{% extends "base.html" %}
+{% block content %}
+<h4 class="mb-3">分析报告</h4>
+
+<div id="no-data-alert" class="alert alert-info">
+    <i class="bi bi-info-circle me-2"></i>请先上传数据文件，然后生成报告
+</div>
+
+<div id="report-section" style="display:none">
+    <!-- 操作栏 -->
+    <div class="d-flex align-items-center gap-3 mb-4">
+        <button class="btn btn-primary d-flex align-items-center gap-2" id="gen-btn" onclick="generateReport()">
+            <i class="bi bi-magic"></i>生成分析报告
+        </button>
+        <button class="btn btn-outline-secondary d-flex align-items-center gap-2"
+                id="download-btn" style="display:none" onclick="downloadReport()">
+            <i class="bi bi-download"></i>下载 Markdown
+        </button>
+        <span id="report-timestamp" class="text-muted small ms-auto"></span>
+    </div>
+
+    <!-- 错误提示 -->
+    <div id="report-error" class="alert alert-danger" style="display:none"></div>
+
+    <!-- 报告内容 -->
+    <div id="report-container" style="display:none">
+        <div class="card">
+            <div class="card-header d-flex align-items-center gap-2">
+                <i class="bi bi-file-earmark-text" style="color:var(--blue)"></i>
+                <span id="report-title">DataMind 数据分析报告</span>
+            </div>
+            <div class="card-body report-content" id="report-html"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════ AI 思考过程可视化 Overlay ═══════════════ -->
+<div id="ai-thinking-overlay">
+    <!-- 扫描线 -->
+    <div class="atk-scan-line"></div>
+
+    <div class="atk-box">
+        <!-- 顶部标题栏 -->
+        <div class="atk-header">
+            <div class="atk-orb-wrap">
+                <div class="atk-orb"></div>
+                <div class="atk-orb-ring"></div>
+            </div>
+            <div class="atk-header-text">
+                <span class="atk-title">AI 分析引擎</span>
+                <span class="atk-tag" id="atk-tag">INITIALIZING</span>
+            </div>
+            <div class="atk-dots">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+
+        <!-- 步骤列表 -->
+        <div class="atk-steps" id="atk-steps"></div>
+
+        <!-- 实时思考流 -->
+        <div class="atk-thought-box">
+            <span class="atk-cursor">▍</span>
+            <span id="atk-thought"></span>
+        </div>
+
+        <!-- 进度条 -->
+        <div class="atk-progress-wrap">
+            <div class="atk-progress-bar" id="atk-progress-bar"></div>
+        </div>
+        <div class="atk-progress-label">
+            <span id="atk-pct">0%</span>
+            <span id="atk-elapsed">0.0s</span>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* ═══ AI Thinking Overlay ═══════════════════════════════════ */
+#ai-thinking-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 9, 18, 0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: opacity .35s ease;
+}
+#ai-thinking-overlay.atk-show {
+    display: flex;
+}
+.atk-scan-line {
+    position: fixed;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(79,159,255,0.6), rgba(0,212,255,0.8), rgba(79,159,255,0.6), transparent);
+    animation: atk-scan 3s linear infinite;
+    pointer-events: none;
+    z-index: 901;
+}
+@keyframes atk-scan {
+    0%   { top: -2px; opacity: 0; }
+    5%   { opacity: 1; }
+    95%  { opacity: 1; }
+    100% { top: 100vh; opacity: 0; }
+}
+
+.atk-box {
+    width: 500px;
+    max-width: calc(100vw - 32px);
+    background: linear-gradient(145deg,
+        rgba(15,22,45,0.97) 0%,
+        rgba(8,13,28,0.99) 100%);
+    border: 1px solid rgba(79,159,255,0.28);
+    border-radius: 20px;
+    padding: 28px 32px 24px;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+        0 0 0 1px rgba(0,212,255,0.06) inset,
+        0 0 60px rgba(79,159,255,0.12),
+        0 20px 60px rgba(0,0,0,0.6);
+    animation: atk-appear .4s cubic-bezier(.16,1,.3,1) both;
+}
+@keyframes atk-appear {
+    from { opacity:0; transform:scale(.92) translateY(16px); }
+    to   { opacity:1; transform:scale(1)   translateY(0);    }
+}
+
+/* 顶部 */
+.atk-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+.atk-orb-wrap {
+    position: relative;
+    width: 44px; height: 44px;
+    flex-shrink: 0;
+}
+.atk-orb {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 32%,
+        #a0e8ff 0%, #4F9FFF 40%, #7C3AED 85%);
+    box-shadow: 0 0 18px rgba(79,159,255,0.7), 0 0 40px rgba(0,212,255,0.3);
+    animation: atk-orb-pulse 2.2s ease-in-out infinite;
+}
+@keyframes atk-orb-pulse {
+    0%,100%{ transform:scale(1);   box-shadow:0 0 18px rgba(79,159,255,.7),0 0 40px rgba(0,212,255,.3); }
+    50%    { transform:scale(1.1); box-shadow:0 0 28px rgba(79,159,255,1),0 0 60px rgba(0,212,255,.5); }
+}
+.atk-orb-ring {
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+    border: 1px solid rgba(79,159,255,0.35);
+    animation: atk-ring 2.2s ease-in-out infinite;
+}
+@keyframes atk-ring {
+    0%,100%{ transform:scale(1);   opacity:.5; }
+    50%    { transform:scale(1.15); opacity:1; }
+}
+.atk-header-text { flex: 1; }
+.atk-title {
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    color: #E8EEFF;
+}
+.atk-tag {
+    display: inline-block;
+    margin-top: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    color: #00D4FF;
+    background: rgba(0,212,255,0.1);
+    border: 1px solid rgba(0,212,255,0.25);
+    border-radius: 4px;
+    padding: 1px 7px;
+    animation: atk-blink 1.4s step-end infinite;
+}
+@keyframes atk-blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+.atk-dots { display:flex; gap:5px; align-items:center; }
+.atk-dots span {
+    width:7px; height:7px; border-radius:50%;
+    background: rgba(79,159,255,0.5);
+    animation: atk-dot-bounce .9s ease-in-out infinite;
+}
+.atk-dots span:nth-child(2){ animation-delay:.15s; }
+.atk-dots span:nth-child(3){ animation-delay:.3s; }
+@keyframes atk-dot-bounce {
+    0%,100%{ transform:translateY(0);   opacity:.4; }
+    50%    { transform:translateY(-5px); opacity:1;  }
+}
+
+/* 步骤列表 */
+.atk-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 20px;
+}
+.atk-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: all .3s ease;
+    opacity: .35;
+}
+.atk-step.active {
+    opacity: 1;
+    background: rgba(79,159,255,0.08);
+    border-color: rgba(79,159,255,0.2);
+}
+.atk-step.done {
+    opacity: .75;
+    background: rgba(52,211,153,0.04);
+    border-color: rgba(52,211,153,0.12);
+}
+.atk-step-icon {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    background: rgba(79,159,255,0.12);
+    color: #8899B8;
+    flex-shrink: 0;
+    transition: all .3s ease;
+}
+.atk-step.active .atk-step-icon {
+    background: rgba(79,159,255,0.2);
+    color: #4F9FFF;
+    animation: atk-icon-spin 1.2s linear infinite;
+}
+.atk-step.done .atk-step-icon {
+    background: rgba(52,211,153,0.15);
+    color: #34D399;
+    animation: none;
+}
+@keyframes atk-icon-spin {
+    0%  { box-shadow:0 0 0 0 rgba(79,159,255,0.4); }
+    70% { box-shadow:0 0 0 8px rgba(79,159,255,0);  }
+    100%{ box-shadow:0 0 0 0 rgba(79,159,255,0);  }
+}
+.atk-step-label {
+    flex: 1;
+    font-size: 13px;
+    color: #8899B8;
+    transition: color .3s;
+}
+.atk-step.active .atk-step-label { color: #C8D4F0; }
+.atk-step.done  .atk-step-label { color: #8899B8; }
+.atk-step-time {
+    font-size: 11px;
+    color: #34D399;
+    opacity: 0;
+    transition: opacity .3s;
+    letter-spacing: .03em;
+}
+.atk-step.done .atk-step-time { opacity: 1; }
+
+/* 实时思考流 */
+.atk-thought-box {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(79,159,255,0.1);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-height: 40px;
+    margin-bottom: 16px;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 12px;
+    color: rgba(0,212,255,0.8);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.atk-cursor {
+    color: #4F9FFF;
+    animation: atk-cur-blink .8s step-end infinite;
+}
+@keyframes atk-cur-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+#atk-thought { transition: opacity .25s ease; }
+
+/* 进度条 */
+.atk-progress-wrap {
+    height: 3px;
+    background: rgba(79,159,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+.atk-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #4F9FFF, #00D4FF, #A78BFA);
+    background-size: 200% 100%;
+    animation: atk-progress-glow 2s linear infinite;
+    transition: width .6s cubic-bezier(.4,0,.2,1);
+}
+@keyframes atk-progress-glow {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+}
+.atk-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: rgba(136,153,184,0.7);
+    letter-spacing: .03em;
+}
+</style>
+
+<script>
+const _STEPS = [
+    { icon: "◈", label: "初始化分析引擎" },
+    { icon: "⟁", label: "读取数据集特征" },
+    { icon: "⚡", label: "时序模式分析" },
+    { icon: "⬡", label: "关键业务指标计算" },
+    { icon: "◎", label: "AI 推理整合" },
+    { icon: "✦", label: "生成 Markdown 报告" },
+];
+
+const _THOUGHTS = [
+    "扫描交易记录，提取时间特征向量...",
+    "发现周期性购买行为，建立时间序列模型...",
+    "计算 RFM 三维客户价值分布...",
+    "识别 Top 商品 → 分析营收贡献度...",
+    "UK 市场占比计算，绘制地域热力图...",
+    "检测 IQR 异常值，统计离群点分布...",
+    "Pearson 相关系数矩阵计算中...",
+    "整合洞察数据，构建结构化报告框架...",
+    "LLM 推理层：语义化业务指标叙述...",
+    "Markdown 排版优化，生成最终报告...",
+];
+
+let _reportMarkdown = "";
+let _thoughtTimer = null, _progressTimer = null, _stepTimers = [], _elapsedTimer = null;
+let _stepDone = [], _startTime = 0;
+
+(async function () {
+    const res = await fetch("/api/data/summary");
+    if (res.ok) {
+        document.getElementById("no-data-alert").style.display  = "none";
+        document.getElementById("report-section").style.display = "block";
+    }
+})();
+
+// ── 构建步骤列表 ──────────────────────────────────────────────
+function _buildSteps() {
+    _stepDone = new Array(_STEPS.length).fill(false);
+    const container = document.getElementById("atk-steps");
+    container.innerHTML = _STEPS.map((s, i) => `
+        <div class="atk-step" id="atk-step-${i}">
+            <div class="atk-step-icon" id="atk-icon-${i}">${s.icon}</div>
+            <span class="atk-step-label">${s.label}</span>
+            <span class="atk-step-time" id="atk-time-${i}"></span>
+        </div>
+    `).join("");
+}
+
+function _activateStep(i) {
+    // 完成上一步
+    if (i > 0) _completeStep(i - 1);
+    const el = document.getElementById(`atk-step-${i}`);
+    if (!el) return;
+    el.classList.add("active");
+    document.getElementById(`atk-icon-${i}`).textContent = "◉";
+    document.getElementById("atk-tag").textContent = "RUNNING";
+}
+
+function _completeStep(i) {
+    const el = document.getElementById(`atk-step-${i}`);
+    if (!el || _stepDone[i]) return;
+    _stepDone[i] = true;
+    el.classList.remove("active");
+    el.classList.add("done");
+    document.getElementById(`atk-icon-${i}`).textContent = "✓";
+    const elapsed = ((Date.now() - _startTime) / 1000).toFixed(1);
+    document.getElementById(`atk-time-${i}`).textContent = `${elapsed}s`;
+}
+
+async function _completeAllSteps() {
+    for (let i = 0; i < _STEPS.length; i++) {
+        _completeStep(i);
+        await _sleep(80);
+    }
+    document.getElementById("atk-tag").textContent = "DONE";
+}
+
+function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── 显示 / 隐藏 Overlay ───────────────────────────────────────
+function _showOverlay() {
+    _buildSteps();
+    _startTime = Date.now();
+
+    const overlay = document.getElementById("ai-thinking-overlay");
+    overlay.classList.add("atk-show");
+
+    // 自动推进步骤（预估每步时间，实际由 API 完成时终止）
+    const schedule = [0, 700, 1600, 2800, 4500, 6800];
+    _stepTimers = schedule.map((t, i) =>
+        setTimeout(() => _activateStep(i), t)
+    );
+
+    // 思考文字轮播
+    let thoughtIdx = 0;
+    const thoughtEl = document.getElementById("atk-thought");
+    thoughtEl.textContent = _THOUGHTS[0];
+    _thoughtTimer = setInterval(() => {
+        thoughtEl.style.opacity = "0";
+        setTimeout(() => {
+            thoughtIdx = (thoughtIdx + 1) % _THOUGHTS.length;
+            thoughtEl.textContent = _THOUGHTS[thoughtIdx];
+            thoughtEl.style.opacity = "1";
+        }, 250);
+    }, 2400);
+
+    // 进度条非线性推进（最多到 88%，等 API 返回后推满）
+    let pct = 0;
+    const barEl = document.getElementById("atk-progress-bar");
+    const pctEl = document.getElementById("atk-pct");
+    _progressTimer = setInterval(() => {
+        if (pct < 88) {
+            const step = pct < 30 ? 3.5 : pct < 60 ? 1.8 : 0.6;
+            pct = Math.min(pct + step * (0.5 + Math.random()), 88);
+            barEl.style.width = pct.toFixed(1) + "%";
+            pctEl.textContent = Math.round(pct) + "%";
+        }
+    }, 220);
+
+    // 计时器
+    const elapsedEl = document.getElementById("atk-elapsed");
+    _elapsedTimer = setInterval(() => {
+        const s = ((Date.now() - _startTime) / 1000).toFixed(1);
+        elapsedEl.textContent = s + "s";
+    }, 100);
+}
+
+async function _hideOverlay() {
+    _stepTimers.forEach(clearTimeout);
+    clearInterval(_thoughtTimer);
+    clearInterval(_progressTimer);
+    clearInterval(_elapsedTimer);
+
+    // 完成剩余步骤
+    await _completeAllSteps();
+
+    // 进度条推满
+    const barEl = document.getElementById("atk-progress-bar");
+    const pctEl = document.getElementById("atk-pct");
+    barEl.style.width = "100%";
+    pctEl.textContent = "100%";
+
+    await _sleep(500);
+
+    const overlay = document.getElementById("ai-thinking-overlay");
+    overlay.style.opacity = "0";
+    overlay.style.transition = "opacity .35s ease";
+    await _sleep(360);
+    overlay.classList.remove("atk-show");
+    overlay.style.opacity = "";
+    overlay.style.transition = "";
+}
+
+// ── 生成报告 ──────────────────────────────────────────────────
+async function generateReport() {
+    document.getElementById("gen-btn").disabled   = true;
+    document.getElementById("report-error").style.display = "none";
+    _showOverlay();
+
+    try {
+        const res  = await fetch("/api/report/generate", { method: "POST" });
+        const data = await res.json();
+
+        await _hideOverlay();
+
+        if (!res.ok) {
+            const errEl = document.getElementById("report-error");
+            errEl.textContent   = data.error || "报告生成失败";
+            errEl.style.display = "block";
+            return;
+        }
+
+        _reportMarkdown = data.content || "";
+        document.getElementById("report-title").textContent     = data.title || "DataMind 数据分析报告";
+        document.getElementById("report-timestamp").textContent = data.generated_at ? `生成于 ${data.generated_at}` : "";
+        // 用客户端 marked 渲染，避免服务端 HTML 转义/缓存问题
+        const mdContent = data.content || "";
+        document.getElementById("report-html").innerHTML = window.marked
+            ? marked.parse(mdContent)
+            : (data.html || mdContent);
+
+        const container = document.getElementById("report-container");
+        container.style.display   = "block";
+        container.style.opacity   = "0";
+        container.style.transform = "translateY(12px)";
+        requestAnimationFrame(() => {
+            container.style.transition = "all 0.45s cubic-bezier(.16,1,.3,1)";
+            container.style.opacity    = "1";
+            container.style.transform  = "translateY(0)";
+        });
+
+        document.getElementById("download-btn").style.display = "flex";
+
+    } catch (e) {
+        await _hideOverlay();
+        const errEl = document.getElementById("report-error");
+        errEl.textContent   = "网络错误：" + e.message;
+        errEl.style.display = "block";
+    } finally {
+        document.getElementById("gen-btn").disabled = false;
+    }
+}
+
+// ── 下载 Markdown ─────────────────────────────────────────────
+function downloadReport() {
+    if (!_reportMarkdown) return;
+    const blob = new Blob([_reportMarkdown], { type: "text/markdown;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement("a"), {
+        href:     url,
+        download: `DataMind_报告_${new Date().toISOString().slice(0,10)}.md`,
+    });
+    // 挂载到 DOM 后触发，确保跨浏览器兼容
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}
