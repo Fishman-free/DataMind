@@ -57,3 +57,6 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+".claude/" 
+".spec-workflow/" 
+"docs/superpowers/" 
