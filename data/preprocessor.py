@@ -15,6 +15,36 @@ import pandas as pd
 # 缺失率超过此阈值的列只警告，不自动处理
 _HIGH_MISSING_THRESHOLD = 0.5
 
+
+def _fill_value_for_numeric(series: "pd.Series") -> float:
+    """
+    根据偏态系数选择填充值：
+    - |skew| > 1.0 或 skew 为 NaN → 中位数（抗偏态）
+    - |skew| <= 1.0 → 均值（分布对称时更准确）
+    """
+    try:
+        skew = float(series.skew())
+    except Exception:
+        skew = float("nan")
+    if pd.isna(skew) or abs(skew) > 1.0:
+        return float(series.median())
+    return float(series.mean())
+
+
+def _fill_value_for_text(series: "pd.Series") -> str:
+    """
+    低基数分类列（n_unique<=10, n_total>=3, 唯一率<=50%）用众数；
+    否则用 "Unknown"。
+    """
+    non_null = series.dropna()
+    n_total = len(non_null)
+    n_unique = non_null.nunique()
+    if n_total >= 3 and n_unique <= 10 and (n_unique / n_total) <= 0.5:
+        mode_vals = non_null.mode()
+        if len(mode_vals) > 0:
+            return str(mode_vals.iloc[0])
+    return "Unknown"
+
 # 检测是否为数量列（用于计算 TotalAmount）
 _QTY_KEYWORDS   = {"quantity", "qty", "count", "数量"}
 _PRICE_KEYWORDS = {"unitprice", "price", "unit_price", "单价", "价格"}
@@ -63,13 +93,31 @@ class Preprocessor:
         self._log["remove_duplicates"] = {"removed": removed, "before": before, "after": len(self.df)}
         return self
 
+    # ── 步骤 1b：文本列清洗 ────────────────────────────────
+
+    def clean_text(self) -> "Preprocessor":
+        """
+        清洗所有 object 类型列：
+        - 去除首尾空格和 Tab
+        - 去除 ASCII 控制字符（0x00-0x1f, 0x7f）
+        NaN 值不受影响（pandas .str 方法对 NaN 安全）。
+        """
+        text_cols = list(self.df.select_dtypes(include=["object"]).columns)
+        for col in text_cols:
+            self.df[col] = self.df[col].str.strip()
+            self.df[col] = self.df[col].str.replace(
+                r"[\x00-\x1f\x7f]", "", regex=True
+            )
+        self._log["clean_text"] = {"cleaned_cols": text_cols}
+        return self
+
     # ── 步骤 2：缺失值处理 ────────────────────────────────
 
     def handle_missing(self) -> "Preprocessor":
         """
-        - 数值列：用中位数填充
-        - 文本列：用 "Unknown" 填充
-        - 缺失率 > 50% 的列：仅记录警告，不强制处理
+        - 数值列：偏态 |skew| > 1.0 → 中位数；否则 → 均值；NaN skew → 中位数
+        - 文本列：低基数分类（n_unique<=10, n_total>=3, 唯一率<=50%）→ 众数；否则 → "Unknown"
+        - 缺失率 > 50% 的列：记录警告，仍然填充
         """
         filled: dict[str, int] = {}
         high_missing: list[str] = []
@@ -90,10 +138,11 @@ class Preprocessor:
                 # 高缺失率列仍然填充，但额外警告
 
             if pd.api.types.is_numeric_dtype(self.df[col]):
-                median_val = self.df[col].median()
-                self.df[col] = self.df[col].fillna(median_val)
+                fill_val = _fill_value_for_numeric(self.df[col].dropna())
+                self.df[col] = self.df[col].fillna(fill_val)
             else:
-                self.df[col] = self.df[col].fillna("Unknown")
+                fill_val = _fill_value_for_text(self.df[col])
+                self.df[col] = self.df[col].fillna(fill_val)
 
             filled[col] = int(missing_count)
 
@@ -136,6 +185,16 @@ class Preprocessor:
             if converted_col.notna().sum() >= len(self.df[col].dropna()) * 0.7:
                 self.df[col] = converted_col
                 converted[col] = "numeric"
+                continue
+
+            # 低基数文本列 → Categorical（n_unique <= 20 且唯一率 <= 50%）
+            non_null = self.df[col].dropna()
+            if len(non_null) >= 3:
+                n_unique = non_null.nunique()
+                ratio = n_unique / len(non_null)
+                if n_unique <= 20 and ratio <= 0.5:
+                    self.df[col] = self.df[col].astype("category")
+                    converted[col] = "category"
 
         self._log["convert_types"] = {"converted": converted}
         return self
@@ -144,16 +203,17 @@ class Preprocessor:
 
     def filter_outliers(self) -> "Preprocessor":
         """
-        对所有数值列用 IQR 法标记异常值。
-        新增列 <原列名>_is_outlier（bool）。
+        对所有数值列用两档 IQR 法标记异常值：
+        - 轻度（×1.5）：新增 <列名>_is_outlier（bool）
+        - 极端（×3.0）：新增 <列名>_is_extreme_outlier（bool）
         不删除行，由用户决定如何处理。
         """
         flagged_total = 0
         detail: dict[str, int] = {}
 
         for col in self.df.select_dtypes(include=[np.number]).columns:
-            # 跳过已是 _is_outlier 的派生列
-            if col.endswith("_is_outlier"):
+            # 跳过已是派生列
+            if col.endswith("_is_outlier") or col.endswith("_is_extreme_outlier"):
                 continue
             # 跳过 ID 标识类列（CustomerID 等，IQR 对其无意义）
             if _is_id_like_column(col):
@@ -165,13 +225,22 @@ class Preprocessor:
 
             if iqr == 0:
                 self.df[f"{col}_is_outlier"] = False
+                self.df[f"{col}_is_extreme_outlier"] = False
                 continue
 
-            lower = q1 - 1.5 * iqr
-            upper = q3 + 1.5 * iqr
-            mask = (self.df[col] < lower) | (self.df[col] > upper)
-            self.df[f"{col}_is_outlier"] = mask
-            n_flagged = int(mask.sum())
+            # 轻度异常：×1.5
+            mild_lower = q1 - 1.5 * iqr
+            mild_upper = q3 + 1.5 * iqr
+            mild_mask = (self.df[col] < mild_lower) | (self.df[col] > mild_upper)
+            self.df[f"{col}_is_outlier"] = mild_mask
+
+            # 极端异常：×3.0
+            extreme_lower = q1 - 3.0 * iqr
+            extreme_upper = q3 + 3.0 * iqr
+            extreme_mask = (self.df[col] < extreme_lower) | (self.df[col] > extreme_upper)
+            self.df[f"{col}_is_extreme_outlier"] = extreme_mask
+
+            n_flagged = int(mild_mask.sum())
             flagged_total += n_flagged
             if n_flagged > 0:
                 detail[col] = n_flagged
@@ -244,6 +313,7 @@ class Preprocessor:
         """按标准顺序执行全部预处理步骤，返回清洁 DataFrame。"""
         return (
             self.remove_duplicates()
+                .clean_text()           # 文本列空白/控制字符清洗
                 .handle_missing()
                 .convert_types()
                 .filter_invalid_records()

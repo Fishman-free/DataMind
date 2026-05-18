@@ -19,7 +19,8 @@
 | **全格式数据接入** | CSV（自动检测 UTF-8/GBK/Latin1 编码）、Excel、JSON，拖拽即上传 |
 | **多轮上下文对话** | ChatSession 维护完整对话历史，支持追问和上下文引用 |
 | **安全代码沙箱** | AI 生成的代码在白名单执行环境中运行，禁止 os/sys/subprocess 等危险调用 |
-| **169 个单元测试** | 全模块覆盖，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
+| **多 Agent 深度报告** | 4 个专注 Agent（StatisticsAgent / InsightAgent / QAAgent / SynthesisAgent）协作生成 ~3000 字深度分析报告，无 Key 时自动降级为模板 |
+| **196 个单元测试** | 全模块覆盖，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
 
 ---
 
@@ -57,19 +58,20 @@
 | 功能模块 | 说明 | 需要 API Key |
 |----------|------|:------------:|
 | 数据上传（点击/拖拽） | CSV / Excel / JSON，自动检测编码，50 MB 限制 | 否 |
-| 自动数据清洗 | 去重→缺失值→类型转换→无效过滤→异常值→特征工程 | 否 |
+| 自动数据清洗（增强版） | 去重→**文本清洗**→**智能缺失值填充**→类型转换→无效过滤→**两档 IQR 异常标记**→特征工程 | 否 |
 | 数据概览页 | 统计卡片 + 预处理摘要 + 前 50 行预览表格 | 否 |
 | 自动洞察面板 | 趋势/异常/分布/相关/周期 5 类洞察，实时推送 | 否 |
 | 可视化仪表盘 | 6 个 Plotly 交互图表 | 否 |
 | 智能问答（多轮） | 自然语言 → AI 生成并执行代码 → 文字 + 图表 | **是** |
-| 自动分析报告 | GPT 润色的结构化 Markdown 报告（含降级模板） | 是（降级可用） |
+| 分析报告（简洁模式） | GPT 润色的结构化 Markdown 报告（含降级模板） | 是（降级可用） |
+| 分析报告（深度模式）🆕 | 4 Agent 协作：数据统计 + 洞察解读 + 对话摘要 + 综合建议，~3000 字深度报告 | 是（降级可用） |
 
 ---
 
 ## 3. 目录结构
 
 ```
-python_final/
+DataMind/
 ├── app.py                    # Flask 入口，注册蓝图，维护全局 app_state
 ├── config.py                 # 配置（API Key、端口、文件大小限制等）
 ├── requirements.txt          # Python 依赖清单
@@ -85,7 +87,8 @@ python_final/
 │   ├── chat.py               # 多轮对话管理（ChatSession）
 │   ├── code_generator.py     # 自然语言 → Pandas 代码，安全沙箱执行
 │   ├── insight.py            # 规则引擎自动洞察（零 API 依赖）
-│   └── report.py             # GPT 润色分析报告，Markdown → HTML
+│   ├── report.py             # GPT 润色分析报告，Markdown → HTML
+│   └── report_agents.py      # 🆕 多 Agent 框架（StatisticsAgent/InsightAgent/QAAgent/SynthesisAgent）
 │
 ├── routes/                   # Flask 路由层
 │   ├── pages.py              # 页面路由（/, /analysis, /visualization, /report）
@@ -137,7 +140,7 @@ python --version
 ### 4.2 安装依赖
 
 ```bash
-cd python_final
+cd DataMind
 pip install -r requirements.txt
 ```
 
@@ -266,7 +269,7 @@ ollama serve
 ## 5. 快速启动
 
 ```bash
-cd python_final
+cd DataMind
 python app.py
 ```
 
@@ -331,10 +334,11 @@ python app.py
 | 步骤 | 内容 |
 |------|------|
 | 1. 去重 | 移除完全重复的行，显示移除数量 |
-| 2. 缺失值处理 | 数值列中位数填充，字符列众数填充，高缺失列（>50%）直接删除 |
-| 3. 类型转换 | 字符串 → 数值 / 日期类型，显示转换的列名 |
-| 4. 无效记录过滤 | 删除数量 ≤ 0 或单价 < 0 的行（适用电商场景） |
-| 5. 异常值过滤 | IQR 法标记极端值，显示检测到的数量 |
+| 2. **文本清洗** 🆕 | 自动去除所有文本列的首尾空白符和 ASCII 控制字符，避免错误分组 |
+| 3. **智能缺失值填充** 🆕 | 数值列：偏态系数 \|skew\| > 1.0 → 中位数，否则 → 均值；文本列：低基数分类列（唯一值 ≤ 10）→ 众数，否则 → "Unknown" |
+| 4. 类型转换 | 字符串 → 数值 / 日期类型 / **低基数列自动转 Categorical** 🆕 |
+| 5. 无效记录过滤 | 删除数量 ≤ 0 或单价 < 0 的行（适用电商场景） |
+| 6. **两档 IQR 异常标记** 🆕 | 轻度异常（×1.5）→ `_is_outlier`；极端异常（×3.0）→ `_is_extreme_outlier`，不删除行 |
 | 特征工程 | 自动新增 TotalAmount、Hour、DayOfWeek 等派生字段 |
 
 **③ 数据预览**
@@ -416,7 +420,11 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ### 6.5 分析报告页（`/report`）
 
-点击「生成分析报告」按钮生成报告：
+页面顶部提供**报告模式切换**，选择后点击「生成分析报告」：
+
+#### 简洁报告模式（默认）
+
+适合快速查阅，约 10-30 秒生成：
 
 **有 API Key**：GPT 将数据摘要、洞察结果、对话历史整合为结构化 Markdown 报告
 
@@ -426,20 +434,33 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ```markdown
 # DataMind 数据分析报告
-
-## 数据概览
-- 总记录数 / 字段数 / 时间跨度 / 数据质量
-
-## 关键发现
-- 自动洞察转化的要点分析
-
-## 对话摘要
-- 本次智能问答的问答记录（若有）
-
-## 总结与建议
-- 数据质量评估
-- 业务层面改进建议
+## 数据概览  |  ## 关键发现  |  ## 总结与建议
 ```
+
+#### 🆕 深度报告模式（多 Agent 协作）
+
+适合深入分析，生成 ~3000 字专业报告，约 30-90 秒：
+
+**4 Agent 协作框架：**
+
+| Agent | 职责 | Token 预算 |
+|-------|------|:----------:|
+| **StatisticsAgent** | 数据特征统计描述（字段类型、分布、偏态、数值范围） | 800 |
+| **InsightAgent** | 关键洞察深度解读（HIGH/MEDIUM/LOW 分级，业务影响分析） | 1000 |
+| **QAAgent** | 对话问答摘要（用户探索路径、AI 关键发现叙述化提炼） | 700 |
+| **SynthesisAgent** | 综合总结与建议（执行摘要 + 3-5 条可执行业务建议） | 800 |
+
+**报告结构：**
+
+```markdown
+# DataMind 深度数据分析报告
+## 数据特征描述   ← StatisticsAgent
+## 关键洞察       ← InsightAgent
+## 对话分析摘要   ← QAAgent
+## 总结与建议     ← SynthesisAgent
+```
+
+> 任意 Agent 失败时自动降级为模板输出，保证报告始终可生成。
 
 点击「下载 Markdown」将报告保存为 `.md` 文件到本地。
 
@@ -597,13 +618,31 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ### POST /api/report/generate
 
-**响应**：
+**请求体（可选）**：
+```json
+{"mode": "simple"}    // 简洁模式（默认），单次 AI 调用
+{"mode": "detailed"}  // 深度模式，4 Agent 协作生成 ~3000 字报告
+```
+
+**响应（简洁模式）**：
 ```json
 {
   "title": "DataMind 数据分析报告",
   "content": "## 数据概览\n...",
   "html": "<h2>数据概览</h2>...",
-  "generated_at": "2026-05-12 14:30:00"
+  "generated_at": "2026-05-12 14:30:00",
+  "mode": "simple"
+}
+```
+
+**响应（深度模式）**：
+```json
+{
+  "title": "DataMind 深度数据分析报告",
+  "content": "# DataMind 深度数据分析报告\n\n## 数据特征描述\n...\n## 关键洞察\n...",
+  "html": "<h1>...</h1>...",
+  "generated_at": "2026-05-12 14:32:00",
+  "mode": "detailed"
 }
 ```
 
@@ -649,15 +688,16 @@ python -m pytest tests/ -q
 | 测试文件 | 覆盖模块 | 用例数 |
 |----------|----------|:------:|
 | test_loader.py | data/loader.py | ~10 |
-| test_preprocessor.py | data/preprocessor.py | ~30 |
+| test_preprocessor.py | data/preprocessor.py | 34（+16 新增）🆕 |
 | test_analyzer.py | data/analyzer.py | ~25 |
 | test_detector.py | data/detector.py | 21 |
 | test_chat.py | ai/chat.py | 12 |
 | test_code_generator.py | ai/code_generator.py | 19 |
 | test_insight.py | ai/insight.py | 7 |
-| test_report.py | ai/report.py | 7 |
+| test_report.py | ai/report.py | 13（+6 新增）🆕 |
+| test_report_agents.py | ai/report_agents.py | 13（全新）🆕 |
 | test_api.py | routes/api.py | 34 |
-| **合计** | | **169** |
+| **合计** | | **~196** |
 
 > 所有测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。
 
@@ -807,12 +847,13 @@ Cmd+Shift+R     （macOS 强制刷新）
 └──────┬────────────────────────────────────────┬─────────────┘
        │                                        │
 ┌──────▼──────────────┐              ┌──────────▼──────────────┐
-│  data/ 数据层        │              │  ai/ 智能体层            │
-│  loader.py          │              │  chat.py (多轮对话)      │
-│  preprocessor.py    │              │  code_generator.py      │
-│  analyzer.py        │              │  insight.py (零 API)    │
-│  detector.py        │              │  report.py              │
-└─────────────────────┘              └──────────┬──────────────┘
+│  data/ 数据层        │              │  ai/ 智能体层              │
+│  loader.py          │              │  chat.py (多轮对话)        │
+│  preprocessor.py 🆕 │              │  code_generator.py        │
+│  analyzer.py        │              │  insight.py (零 API)      │
+│  detector.py        │              │  report.py                │
+└─────────────────────┘              │  report_agents.py 🆕      │
+                                     └──────────┬────────────────┘
                                                 │
                                      ┌──────────▼──────────────┐
                                      │  OpenAI gpt-4o-mini     │

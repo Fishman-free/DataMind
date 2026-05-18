@@ -232,3 +232,106 @@ class TestRunAll:
         assert "original_rows" in report
         assert "final_rows" in report
         assert report["original_rows"] == 3
+
+    def test_get_report_has_clean_text_step(self, df_retail_like):
+        from data.preprocessor import Preprocessor
+        p = Preprocessor(df_retail_like)
+        p.run_all()
+        report = p.get_report()
+        assert "clean_text" in report, "报告缺少 clean_text 步骤"
+
+
+# ── clean_text ────────────────────────────────────────────
+
+class TestCleanText:
+    def test_strips_leading_trailing_spaces(self):
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"name": ["  Alice ", "\tBob", "Charlie  "]})
+        result = Preprocessor(df).clean_text().df
+        assert result["name"].tolist() == ["Alice", "Bob", "Charlie"]
+
+    def test_removes_control_characters(self):
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"note": ["hello\x00world", "ok\x1f", "clean"]})
+        result = Preprocessor(df).clean_text().df
+        assert result["note"].iloc[0] == "helloworld"
+        assert result["note"].iloc[1] == "ok"
+
+    def test_preserves_nan(self):
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"col": ["  text  ", None, " hi "]})
+        result = Preprocessor(df).clean_text().df
+        assert pd.isna(result["col"].iloc[1])
+        assert result["col"].iloc[0] == "text"
+
+    def test_log_records_cleaned_cols(self):
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"a": [" x "], "b": [1]})
+        p = Preprocessor(df).clean_text()
+        report = p.get_report()
+        assert "clean_text" in report
+        assert "a" in report["clean_text"]["cleaned_cols"]
+
+
+# ── 改进的 handle_missing（偏态 + 低基数）──────────────────
+
+class TestHandleMissingImproved:
+    def test_normal_numeric_filled_with_mean(self):
+        """正态分布列（skew ≈ 0）用均值填充。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"val": [10.0, 11.0, 12.0, 13.0, np.nan]})
+        result = Preprocessor(df).handle_missing().df
+        assert result["val"].iloc[4] == pytest.approx(11.5)
+
+    def test_skewed_numeric_filled_with_median(self):
+        """高偏态列（skew > 1.0）用中位数填充。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"val": [1.0, 1.0, 1.0, 1.0, 100.0, np.nan]})
+        result = Preprocessor(df).handle_missing().df
+        assert result["val"].iloc[5] == pytest.approx(1.0)
+
+    def test_low_cardinality_text_filled_with_mode(self):
+        """低基数文本列用众数填充。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({
+            "status": ["active", "active", "active", "inactive", "inactive", None],
+        })
+        result = Preprocessor(df).handle_missing().df
+        assert result["status"].iloc[5] == "active"
+
+
+# ── 两档 IQR 异常标记 ────────────────────────────────────
+
+class TestTwoTierIQR:
+    def test_mild_outlier_column_created(self):
+        """×1.5 IQR → _is_outlier 列存在。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"value": [10, 12, 11, 13, 10, 9999, 11, 12]})
+        result = Preprocessor(df).filter_outliers().df
+        assert "value_is_outlier" in result.columns
+
+    def test_extreme_outlier_column_created(self):
+        """×3.0 IQR → _is_extreme_outlier 列存在。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"value": [10, 12, 11, 13, 10, 9999, 11, 12]})
+        result = Preprocessor(df).filter_outliers().df
+        assert "value_is_extreme_outlier" in result.columns
+
+    def test_extreme_outlier_flagged(self):
+        """极端异常值（×3.0）被标记。"""
+        from data.preprocessor import Preprocessor
+        df = pd.DataFrame({"value": [10, 12, 11, 13, 10, 9999, 11, 12]})
+        result = Preprocessor(df).filter_outliers().df
+        extreme_rows = result[result["value_is_extreme_outlier"] == True]
+        assert 9999 in extreme_rows["value"].values
+
+    def test_mild_not_extreme_for_borderline(self):
+        """轻度异常不被标记为极端异常。"""
+        from data.preprocessor import Preprocessor
+        # Q1=10, Q3=13, IQR=3; mild=10-4.5=5.5, extreme=10-9=1; upper mild=17.5, extreme=22
+        # 值 20: 超 mild(17.5) 但不超 extreme(22) → mild True, extreme False
+        df = pd.DataFrame({"val": [10, 10, 10, 13, 13, 13, 20]})
+        result = Preprocessor(df).filter_outliers().df
+        row_20 = result[result["val"] == 20]
+        assert row_20["val_is_outlier"].iloc[0] == True
+        assert row_20["val_is_extreme_outlier"].iloc[0] == False

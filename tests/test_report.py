@@ -96,3 +96,54 @@ class TestReportGenerator:
         # 失败时仍返回结构化报告（降级版本）
         assert isinstance(result, dict)
         assert "content" in result
+
+
+# ── generate_detailed ─────────────────────────────────────
+
+class TestGenerateDetailed:
+    def test_generate_detailed_returns_dict(self, mock_openai_client, sample_df_info, sample_insights):
+        from ai.report import ReportGenerator
+        rg = ReportGenerator(mock_openai_client)
+        result = rg.generate_detailed(sample_df_info, sample_insights, [])
+        assert isinstance(result, dict)
+
+    def test_generate_detailed_has_mode_field(self, mock_openai_client, sample_df_info, sample_insights):
+        from ai.report import ReportGenerator
+        rg = ReportGenerator(mock_openai_client)
+        result = rg.generate_detailed(sample_df_info, sample_insights, [])
+        assert result.get("mode") == "detailed"
+
+    def test_generate_detailed_has_required_keys(self, mock_openai_client, sample_df_info, sample_insights):
+        from ai.report import ReportGenerator
+        rg = ReportGenerator(mock_openai_client)
+        result = rg.generate_detailed(sample_df_info, sample_insights, [])
+        for key in ("title", "content", "generated_at", "mode"):
+            assert key in result, f"缺少键: {key}"
+
+    def test_generate_detailed_content_longer_than_simple(
+        self, mock_openai_client, sample_df_info, sample_insights
+    ):
+        from ai.report import ReportGenerator
+        rg = ReportGenerator(mock_openai_client)
+        simple   = rg.generate(sample_df_info, sample_insights, [])
+        detailed = rg.generate_detailed(sample_df_info, sample_insights, [])
+        # 详细报告内容应比简单报告更长
+        assert len(detailed["content"]) > len(simple["content"])
+
+    def test_generate_detailed_fallback_when_client_none(self, sample_df_info, sample_insights):
+        from ai.report import ReportGenerator
+        rg = ReportGenerator(None)
+        result = rg.generate_detailed(sample_df_info, sample_insights, [])
+        assert isinstance(result, dict)
+        assert "content" in result
+        assert result.get("mode") == "detailed"
+
+    def test_generate_detailed_with_chat_history(self, mock_openai_client, sample_df_info, sample_insights):
+        from ai.report import ReportGenerator
+        history = [
+            {"role": "user",      "content": "销售趋势如何？"},
+            {"role": "assistant", "content": "整体呈上升趋势。"},
+        ]
+        rg = ReportGenerator(mock_openai_client)
+        result = rg.generate_detailed(sample_df_info, sample_insights, history)
+        assert isinstance(result["content"], str)

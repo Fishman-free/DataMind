@@ -796,6 +796,18 @@ main.flex-grow-1 {
   color: var(--blue) !important;
 }
 
+/* Kaggle 外链 */
+.nav-link-external {
+  margin-top: auto;          /* 推到侧边栏底部 */
+  border-top: 1px solid rgba(255,255,255,0.06);
+  color: rgba(0,229,255,0.75) !important;
+}
+.nav-link-external:hover {
+  color: var(--cyan) !important;
+  background: rgba(0,229,255,0.06) !important;
+}
+.nav-link-external i { color: inherit !important; }
+
 /* ── 13. Status bar ─────────────────────────────────────────────── */
 .statusbar span {
   display: flex; align-items: center; gap: 5px;
@@ -1772,6 +1784,16 @@ main.flex-grow-1 > * {
 .hero-pill:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* Kaggle 外链胶囊 */
+.hero-pill-external {
+  color: rgba(0, 229, 255, 0.8) !important;
+  border-color: rgba(0, 229, 255, 0.2) !important;
+}
+.hero-pill-external:hover {
+  color: var(--cyan) !important;
+  background: rgba(0, 229, 255, 0.1) !important;
 }
 
 /* 右上角 CTA 按钮 */

@@ -7,9 +7,29 @@
 </div>
 
 <div id="report-section" style="display:none">
+    <!-- 模式切换 -->
+    <div class="d-flex align-items-center gap-2 mb-3" id="mode-selector">
+        <span class="text-muted small me-1" style="white-space:nowrap">报告模式：</span>
+        <div class="btn-group btn-group-sm" role="group">
+            <input type="radio" class="btn-check" name="report-mode" id="mode-simple"
+                   value="simple" checked>
+            <label class="btn btn-outline-primary" for="mode-simple">
+                <i class="bi bi-file-text me-1"></i>简洁报告
+            </label>
+            <input type="radio" class="btn-check" name="report-mode" id="mode-detailed"
+                   value="detailed">
+            <label class="btn btn-outline-warning" for="mode-detailed">
+                <i class="bi bi-stars me-1"></i>深度报告 · 多 Agent
+            </label>
+        </div>
+        <span class="text-muted small ms-2" id="mode-hint"
+              style="font-size:11px; opacity:.7">精简快速</span>
+    </div>
+
     <!-- 操作栏 -->
     <div class="d-flex align-items-center gap-3 mb-4">
-        <button class="btn btn-primary d-flex align-items-center gap-2" id="gen-btn" onclick="generateReport()">
+        <button class="btn btn-primary d-flex align-items-center gap-2" id="gen-btn"
+                onclick="generateReport()">
             <i class="bi bi-magic"></i>生成分析报告
         </button>
         <button class="btn btn-outline-secondary d-flex align-items-center gap-2"
@@ -325,7 +345,8 @@
 </style>
 
 <script>
-const _STEPS = [
+// ── 步骤定义（简单 & 详细两套）──────────────────────────────
+const _STEPS_SIMPLE = [
     { icon: "◈", label: "初始化分析引擎" },
     { icon: "⟁", label: "读取数据集特征" },
     { icon: "⚡", label: "时序模式分析" },
@@ -334,7 +355,16 @@ const _STEPS = [
     { icon: "✦", label: "生成 Markdown 报告" },
 ];
 
-const _THOUGHTS = [
+const _STEPS_DETAILED = [
+    { icon: "◈", label: "初始化多 Agent 框架" },
+    { icon: "📊", label: "StatisticsAgent：数据特征统计描述" },
+    { icon: "🔍", label: "InsightAgent：关键洞察深度解读" },
+    { icon: "💬", label: "QAAgent：对话问答摘要分析" },
+    { icon: "🧠", label: "SynthesisAgent：综合总结与建议" },
+    { icon: "✦", label: "整合 Agent 输出，生成深度报告" },
+];
+
+const _THOUGHTS_SIMPLE = [
     "扫描交易记录，提取时间特征向量...",
     "发现周期性购买行为，建立时间序列模型...",
     "计算 RFM 三维客户价值分布...",
@@ -347,9 +377,34 @@ const _THOUGHTS = [
     "Markdown 排版优化，生成最终报告...",
 ];
 
+const _THOUGHTS_DETAILED = [
+    "初始化四 Agent 协作框架...",
+    "StatisticsAgent 分析数据集维度与分布特征...",
+    "StatisticsAgent 计算数值列偏态与峰度统计...",
+    "InsightAgent 读取高严重度洞察，解读业务影响...",
+    "InsightAgent 按优先级排序并展开每条洞察...",
+    "QAAgent 提取对话历史中的核心探索路径...",
+    "QAAgent 归纳用户关注点与 AI 关键发现...",
+    "SynthesisAgent 汇聚三路 Agent 输出...",
+    "SynthesisAgent 生成执行摘要与行动建议...",
+    "整合四个 Agent 输出，组装 ~3000 字深度报告...",
+];
+
 let _reportMarkdown = "";
 let _thoughtTimer = null, _progressTimer = null, _stepTimers = [], _elapsedTimer = null;
-let _stepDone = [], _startTime = 0;
+let _stepDone = [], _startTime = 0, _currentStepCount = 6;
+
+// ── 模式切换提示文字 ───────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("input[name='report-mode']").forEach(radio => {
+        radio.addEventListener("change", () => {
+            const hint = document.getElementById("mode-hint");
+            hint.textContent = radio.value === "detailed"
+                ? "4 Agent 协作，深度分析 ~3000 字，耗时较长"
+                : "精简快速";
+        });
+    });
+});
 
 (async function () {
     const res = await fetch("/api/data/summary");
@@ -360,16 +415,18 @@ let _stepDone = [], _startTime = 0;
 })();
 
 // ── 构建步骤列表 ──────────────────────────────────────────────
-function _buildSteps() {
-    _stepDone = new Array(_STEPS.length).fill(false);
+function _buildSteps(mode) {
+    const steps = mode === "detailed" ? _STEPS_DETAILED : _STEPS_SIMPLE;
+    _stepDone = new Array(steps.length).fill(false);
     const container = document.getElementById("atk-steps");
-    container.innerHTML = _STEPS.map((s, i) => `
+    container.innerHTML = steps.map((s, i) => `
         <div class="atk-step" id="atk-step-${i}">
             <div class="atk-step-icon" id="atk-icon-${i}">${s.icon}</div>
             <span class="atk-step-label">${s.label}</span>
             <span class="atk-step-time" id="atk-time-${i}"></span>
         </div>
     `).join("");
+    return steps.length;
 }
 
 function _activateStep(i) {
@@ -393,8 +450,8 @@ function _completeStep(i) {
     document.getElementById(`atk-time-${i}`).textContent = `${elapsed}s`;
 }
 
-async function _completeAllSteps() {
-    for (let i = 0; i < _STEPS.length; i++) {
+async function _completeAllSteps(stepCount) {
+    for (let i = 0; i < stepCount; i++) {
         _completeStep(i);
         await _sleep(80);
     }
@@ -404,31 +461,35 @@ async function _completeAllSteps() {
 function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ── 显示 / 隐藏 Overlay ───────────────────────────────────────
-function _showOverlay() {
-    _buildSteps();
+function _showOverlay(mode) {
+    const stepCount = _buildSteps(mode);
+    _currentStepCount = stepCount;
     _startTime = Date.now();
 
     const overlay = document.getElementById("ai-thinking-overlay");
     overlay.classList.add("atk-show");
 
-    // 自动推进步骤（预估每步时间，实际由 API 完成时终止）
-    const schedule = [0, 700, 1600, 2800, 4500, 6800];
-    _stepTimers = schedule.map((t, i) =>
+    // 自动推进步骤：详细模式耗时更长，每步间隔更大
+    const baseSchedule = mode === "detailed"
+        ? [0, 1200, 3000, 5500, 8500, 12000]
+        : [0, 700, 1600, 2800, 4500, 6800];
+    _stepTimers = baseSchedule.slice(0, stepCount).map((t, i) =>
         setTimeout(() => _activateStep(i), t)
     );
 
     // 思考文字轮播
+    const thoughts = mode === "detailed" ? _THOUGHTS_DETAILED : _THOUGHTS_SIMPLE;
     let thoughtIdx = 0;
     const thoughtEl = document.getElementById("atk-thought");
-    thoughtEl.textContent = _THOUGHTS[0];
+    thoughtEl.textContent = thoughts[0];
     _thoughtTimer = setInterval(() => {
         thoughtEl.style.opacity = "0";
         setTimeout(() => {
-            thoughtIdx = (thoughtIdx + 1) % _THOUGHTS.length;
-            thoughtEl.textContent = _THOUGHTS[thoughtIdx];
+            thoughtIdx = (thoughtIdx + 1) % thoughts.length;
+            thoughtEl.textContent = thoughts[thoughtIdx];
             thoughtEl.style.opacity = "1";
         }, 250);
-    }, 2400);
+    }, mode === "detailed" ? 3200 : 2400);
 
     // 进度条非线性推进（最多到 88%，等 API 返回后推满）
     let pct = 0;
@@ -458,7 +519,7 @@ async function _hideOverlay() {
     clearInterval(_elapsedTimer);
 
     // 完成剩余步骤
-    await _completeAllSteps();
+    try { await _completeAllSteps(_currentStepCount); } catch(e) { /* 防御性捕获 */ }
 
     // 进度条推满
     const barEl = document.getElementById("atk-progress-bar");
@@ -479,12 +540,19 @@ async function _hideOverlay() {
 
 // ── 生成报告 ──────────────────────────────────────────────────
 async function generateReport() {
+    const modeEl = document.querySelector("input[name='report-mode']:checked");
+    const mode   = modeEl ? modeEl.value : "simple";
+
     document.getElementById("gen-btn").disabled   = true;
     document.getElementById("report-error").style.display = "none";
-    _showOverlay();
+    _showOverlay(mode);
 
     try {
-        const res  = await fetch("/api/report/generate", { method: "POST" });
+        const res  = await fetch("/api/report/generate", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({ mode }),
+        });
         const data = await res.json();
 
         await _hideOverlay();
@@ -497,7 +565,8 @@ async function generateReport() {
         }
 
         _reportMarkdown = data.content || "";
-        document.getElementById("report-title").textContent     = data.title || "DataMind 数据分析报告";
+        const modeLabel = data.mode === "detailed" ? " · 深度报告（4 Agent）" : "";
+        document.getElementById("report-title").textContent     = (data.title || "DataMind 数据分析报告") + modeLabel;
         document.getElementById("report-timestamp").textContent = data.generated_at ? `生成于 ${data.generated_at}` : "";
         // 用客户端 marked 渲染，避免服务端 HTML 转义/缓存问题
         const mdContent = data.content || "";

@@ -511,26 +511,44 @@ def _safe_get_model(resp: Any, fallback: str) -> str:
 
 @api_bp.route("/report/generate", methods=["POST"])
 def report_generate():
-    """一键生成 Markdown 分析报告（需要 OpenAI API Key）。"""
+    """
+    生成数据分析报告。
+
+    请求体（可选）：
+      {"mode": "simple"}   — 简单模式（默认），使用单 AI 调用生成精简报告
+      {"mode": "detailed"} — 详细模式，使用四 Agent 框架生成 ~3000 字深度报告
+
+    响应：{title, content, generated_at, html, mode}
+    """
     err = _require_data()
     if err:
         return err
 
+    body = request.get_json(silent=True) or {}
+    mode = (body.get("mode") or "simple").strip().lower()
+    if mode not in ("simple", "detailed"):
+        mode = "simple"
+
     state = _state()
     rg    = state.get("report_generator")
     if rg is None:
-        # 无 AI Key 时用降级模板生成报告（client=None → generate 内部捕获异常后走 fallback）
         from ai.report import ReportGenerator
         rg = ReportGenerator(None)
 
     session = state.get("chat_session")
     history = session.history if session else []
+    summary = state["analyzer"].summary_stats()
+    insights = state["insights"] or []
 
-    report = rg.generate(
-        state["analyzer"].summary_stats(),
-        state["insights"] or [],
-        history,
-    )
+    if mode == "detailed":
+        report = rg.generate_detailed(
+            summary,
+            insights,
+            history,
+            analyzer=state.get("analyzer"),
+        )
+    else:
+        report = rg.generate(summary, insights, history)
+
     html = rg.to_html(report)
-
-    return jsonify({**report, "html": html})
+    return jsonify({**report, "html": html, "mode": mode})

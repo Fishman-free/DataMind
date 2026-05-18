@@ -106,6 +106,107 @@ class ReportGenerator:
             extensions=["tables", "fenced_code", "nl2br"],
         )
 
+    # ── 详细模式：多 Agent 协作生成深度报告 ────────────────
+
+    def generate_detailed(
+        self,
+        df_info: dict[str, Any],
+        insights: list[dict[str, Any]],
+        chat_history: list[dict[str, str]],
+        analyzer: Any = None,
+    ) -> dict[str, Any]:
+        """
+        使用四 Agent 框架生成深度分析报告（~3000 字）。
+
+        Agent 执行顺序：
+          1. StatisticsAgent  — 数据特征统计描述
+          2. InsightAgent     — 关键洞察深度解读
+          3. QAAgent          — 对话问答摘要分析
+          4. SynthesisAgent   — 综合总结与建议
+
+        每个 Agent 独立生成一个 Markdown 章节，最终拼接为完整报告。
+        任意 Agent 失败时自动使用降级模板，保证报告始终可输出。
+
+        Parameters
+        ----------
+        df_info      : summary_stats() 返回的数据集摘要
+        insights     : InsightEngine.generate_all() 返回的洞察列表
+        chat_history : 对话历史
+        analyzer     : Analyzer 实例（用于获取额外统计数据，可选）
+
+        Returns
+        -------
+        {"title": str, "content": str, "generated_at": str, "mode": "detailed"}
+        """
+        import config as _cfg
+        from ai.report_agents import StatisticsAgent, InsightAgent, QAAgent, SynthesisAgent
+
+        model = _cfg.AI_MODEL
+
+        # 补充数值摘要到 df_info（若分析器可用）
+        enriched_info = dict(df_info)
+        if analyzer is not None:
+            try:
+                numeric_summary = {}
+                stats = analyzer.summary_stats()
+                for col, col_stats in (stats.get("numeric_stats") or {}).items():
+                    numeric_summary[col] = col_stats
+                if numeric_summary:
+                    enriched_info["numeric_summary"] = numeric_summary
+                enriched_info["numeric_cols"] = list(numeric_summary.keys())
+            except Exception:
+                pass
+
+        # Agent 1：数据特征统计
+        stats_agent   = StatisticsAgent(self.client, model)
+        stats_section = stats_agent.generate(enriched_info)
+
+        # Agent 2：关键洞察解读
+        insight_agent   = InsightAgent(self.client, model)
+        insight_section = insight_agent.generate(insights)
+
+        # Agent 3：对话摘要
+        qa_agent   = QAAgent(self.client, model)
+        qa_section = qa_agent.generate(chat_history)
+
+        # Agent 4：综合总结（汇聚前三 Agent 输出）
+        synthesis_agent   = SynthesisAgent(self.client, model)
+        synthesis_section = synthesis_agent.generate(
+            stats_section, insight_section, qa_section, enriched_info
+        )
+
+        # 组装完整报告
+        rows = df_info.get("row_count", "?")
+        cols = df_info.get("column_count", "?")
+        content = f"""# DataMind 深度数据分析报告
+
+> 本报告由 4 个专注 AI Agent 协作生成，覆盖数据特征、洞察解读、对话分析和综合建议。
+> 数据规模：**{rows}** 条记录 × **{cols}** 个字段
+
+---
+
+{stats_section}
+
+---
+
+{insight_section}
+
+---
+
+{qa_section}
+
+---
+
+{synthesis_section}
+"""
+
+        return {
+            "title":        "DataMind 深度数据分析报告",
+            "content":      content,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "mode":         "detailed",
+        }
+
     # ── 内部方法 ───────────────────────────────────────
 
     def _build_report_prompt(
