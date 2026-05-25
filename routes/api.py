@@ -9,6 +9,7 @@ REST API 路由蓝图 — DataMind 后端接口。
   GET  /api/data/preprocess-report    预处理步骤摘要
   GET  /api/data/quality              数据质量评分卡
   GET  /api/insights                  自动洞察列表
+  POST /api/chart/generate            自然语言图表生成（NL2Vis）
   GET  /api/analysis/<method>         调用内置分析方法
   POST /api/chat                      AI 问答（代码生成+执行）
   GET  /api/chat/history              对话历史
@@ -311,6 +312,39 @@ def insights():
     if err:
         return err
     return jsonify(_state()["insights"] or [])
+
+
+# ── 图表生成接口 ──────────────────────────────────────────────
+
+@api_bp.route("/chart/generate", methods=["POST"])
+def chart_generate():
+    """
+    NL2Vis 自然语言图表生成。
+
+    请求体：
+      {"description": "...", "previous_chart": {...} }
+
+    响应：{success, chart, explanation}
+    """
+    err = _require_data()
+    if err:
+        return err
+
+    body = request.get_json(silent=True) or {}
+    description = (body.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "图表描述不能为空"}), 400
+
+    state = _state()
+
+    from ai.chart_generator import ChartGenerator
+    cg = ChartGenerator(state.get("openai_client"))
+    result = cg.generate(
+        description,
+        state["df_clean"],
+        previous_chart=body.get("previous_chart"),
+    )
+    return jsonify(result)
 
 
 # ── 分析接口 ──────────────────────────────────────────────────
