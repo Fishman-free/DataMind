@@ -85,3 +85,12 @@ def test_adaptive_charts_contract(client, loaded_state):
         assert 'type' in cfg
         assert 'title' in cfg
         assert 'data' in cfg
+
+
+def test_adaptive_charts_contract_without_data_returns_400(client):
+    resp = client.get('/api/analysis/adaptive_charts')
+    assert resp.status_code == 400
+
+    payload = resp.get_json()
+    assert isinstance(payload, dict)
+    assert payload.get('error')

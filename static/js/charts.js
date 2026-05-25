@@ -419,7 +419,11 @@ async function _renderAdaptiveDashboard(profile) {
     var charts = [];
     try {
         const r = await fetch('/api/analysis/adaptive_charts');
-        if (r.ok) charts = await r.json();
+        if (!r.ok) {
+            grid.innerHTML = '<div class="col-12"><div class="alert alert-warning">图表加载失败，请刷新重试。</div></div>';
+            return;
+        }
+        charts = await r.json();
     } catch(e) {
         grid.innerHTML = '<div class="col-12"><div class="alert alert-warning">图表加载失败，请刷新重试。</div></div>';
         return;
@@ -437,7 +441,14 @@ function _updateSlotHeader(index, title) {
     if (!slot) return;
     var card = slot.closest ? slot.closest('.card') : null;
     var header = card ? card.querySelector('.card-header') : null;
-    if (header) header.innerHTML = '<i class="bi bi-graph-up me-2" style="color:var(--cyan)"></i>' + title;
+    if (!header) return;
+
+    header.textContent = '';
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-graph-up me-2';
+    icon.style.color = 'var(--cyan)';
+    header.appendChild(icon);
+    header.appendChild(document.createTextNode(title || '图表'));
 }
 
 function _renderChartSlot(index, cfg) {
