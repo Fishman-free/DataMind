@@ -112,6 +112,13 @@ class CodeGenerator:
 
         return {"success": True, "result": result_val, "chart": chart}
 
+    # ── 代码提取（静态工具方法）───────────────────────
+
+    @staticmethod
+    def extract_code(text: str) -> str:
+        """从 AI 回复中提取 ```python ... ``` 代码块。"""
+        return _extract_code(text)
+
     # ── 代码生成（调用 OpenAI）──────────────────────────
 
     def generate(

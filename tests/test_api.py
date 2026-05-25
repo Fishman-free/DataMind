@@ -237,15 +237,34 @@ class TestChat:
 class TestChatStream:
     """SSE 流式问答端到端测试。"""
 
-    def test_chat_fallback_to_sync(self, app):
-        """无数据时 POST /api/chat 返回 400 JSON 而非 SSE。"""
+    def test_chat_fallback_to_sync(self, loaded_state, app):
+        """stream=false 时走同步代码路径，返回 JSON 而非 SSE。"""
+        from unittest.mock import MagicMock
+        from app import app_state
+
+        mock_cg = MagicMock()
+        mock_cg.generate.return_value = {
+            "answer":  "月均销售额为 1250.5",
+            "code":    "result = df['TotalAmount'].mean()",
+            "success": True,
+            "result":  1250.5,
+            "chart":   None,
+        }
+        app_state["code_generator"] = mock_cg
+
         client = app.test_client()
-        resp = client.post("/api/chat",
-            data='{"question": "test"}',
+        resp = client.post("/api/chat?stream=false",
+            json={"question": "月均销售额是多少？"},
             content_type="application/json")
-        assert resp.status_code == 400
+
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/json"
+
         data = resp.get_json()
-        assert "error" in data
+        assert data["answer"] == "月均销售额为 1250.5"
+        assert data["code"] == "result = df['TotalAmount'].mean()"
+        assert data["success"] is True
+        assert data["result"] == 1250.5
 
 
 # ── /api/report/generate ─────────────────────────────────────

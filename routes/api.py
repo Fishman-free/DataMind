@@ -373,8 +373,6 @@ def chat():
         return jsonify(result)
 
     # 新 SSE 流路径
-    from ai.code_generator import _extract_code
-
     def _chat_stream():
         messages = list(context) + [{"role": "user", "content": question}]
         full_text = ""
@@ -398,7 +396,7 @@ def chat():
                     continue
 
             # 提取代码块并执行
-            code = _extract_code(full_text)
+            code = cg.extract_code(full_text)
             if code:
                 yield {"type": "code_complete", "code": code}
                 exec_result = cg.execute_safe(code, df)
@@ -406,8 +404,6 @@ def chat():
                 chart_data = exec_result.get("chart")
                 if chart_data:
                     yield {"type": "chart", "data": chart_data}
-            else:
-                yield {"type": "exec_result", "success": True, "result": None}
 
             # 记录到 ChatSession
             if session:
