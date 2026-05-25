@@ -21,6 +21,11 @@
             <label class="btn btn-outline-warning" for="mode-detailed">
                 <i class="bi bi-stars me-1"></i>深度报告 · 多 Agent
             </label>
+            <input type="radio" class="btn-check" name="report-mode" id="mode-story"
+                   value="story">
+            <label class="btn btn-outline-success" for="mode-story">
+                <i class="bi bi-book me-1"></i>数据故事
+            </label>
         </div>
         <span class="text-muted small ms-2" id="mode-hint"
               style="font-size:11px; opacity:.7">精简快速</span>
@@ -50,6 +55,19 @@
                 <span id="report-title">DataMind 数据分析报告</span>
             </div>
             <div class="card-body report-content" id="report-html"></div>
+        </div>
+    </div>
+
+    <!-- 数据故事展示区 -->
+    <div id="story-container" style="display:none">
+        <div class="story-hero">
+            <h2 id="story-title" class="story-title"></h2>
+            <p id="story-subtitle" class="story-subtitle text-muted"></p>
+        </div>
+        <div id="story-sections" class="story-sections"></div>
+        <div class="story-takeaways mt-4">
+            <h5><i class="bi bi-lightbulb me-2" style="color:var(--yellow)"></i>核心结论</h5>
+            <ul id="story-takeaways-list" class="list-unstyled"></ul>
         </div>
     </div>
 </div>
@@ -342,6 +360,76 @@
     color: rgba(136,153,184,0.7);
     letter-spacing: .03em;
 }
+
+/* ═══ 数据故事展示区 ═══════════════════════════════════════ */
+.story-hero {
+    text-align: center;
+    padding: 32px 16px 24px;
+}
+.story-title {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #E8EEFF;
+    letter-spacing: .02em;
+}
+.story-subtitle {
+    font-size: .95rem;
+    margin-top: 6px;
+}
+.story-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.story-section {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(79,159,255,0.08);
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+.story-section-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #C8D4F0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.story-section-num {
+    font-size: .82rem;
+    font-weight: 700;
+    color: var(--blue, #4F9FFF);
+    background: rgba(79,159,255,0.1);
+    border-radius: 6px;
+    padding: 2px 8px;
+    letter-spacing: .04em;
+}
+.story-section-body {
+    font-size: .92rem;
+    line-height: 1.8;
+    color: #A0B0C8;
+}
+.story-section-body p {
+    margin-bottom: 8px;
+}
+.story-chart {
+    background: rgba(0,0,0,0.15);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+}
+.story-takeaways {
+    background: rgba(255,179,71,0.04);
+    border: 1px solid rgba(255,179,71,0.12);
+    border-radius: 12px;
+    padding: 20px 24px;
+}
+.story-takeaways li {
+    font-size: .92rem;
+    color: #C0C8D8;
+    line-height: 1.7;
+}
 </style>
 
 <script>
@@ -390,6 +478,19 @@ const _THOUGHTS_DETAILED = [
     "整合四个 Agent 输出，组装 ~3000 字深度报告...",
 ];
 
+const _THOUGHTS_STORY = [
+    "初始化数据叙事引擎...",
+    "扫描数据中的关键趋势与转折点...",
+    "提取核心叙事线索与业务情节...",
+    "构建数据故事的主线框架...",
+    "为关键图表生成叙事解说...",
+    "识别数据中的冲突与反转点...",
+    "将统计指标转化为业务语言...",
+    "生成故事化章节段落...",
+    "整合核心结论与关键启示...",
+    "润色叙事节奏，生成最终故事...",
+];
+
 let _reportMarkdown = "";
 let _thoughtTimer = null, _progressTimer = null, _stepTimers = [], _elapsedTimer = null;
 let _stepDone = [], _startTime = 0, _currentStepCount = 6;
@@ -401,7 +502,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const hint = document.getElementById("mode-hint");
             hint.textContent = radio.value === "detailed"
                 ? "4 Agent 协作，深度分析 ~3000 字，耗时较长"
-                : "精简快速";
+                : radio.value === "story"
+                    ? "数据叙事，将分析结果转化为生动的数据故事"
+                    : "精简快速";
         });
     });
 });
@@ -478,7 +581,9 @@ function _showOverlay(mode) {
     );
 
     // 思考文字轮播
-    const thoughts = mode === "detailed" ? _THOUGHTS_DETAILED : _THOUGHTS_SIMPLE;
+    const thoughts = mode === "detailed" ? _THOUGHTS_DETAILED
+                   : mode === "story" ? _THOUGHTS_STORY
+                   : _THOUGHTS_SIMPLE;
     let thoughtIdx = 0;
     const thoughtEl = document.getElementById("atk-thought");
     thoughtEl.textContent = thoughts[0];
@@ -545,7 +650,55 @@ async function generateReport() {
 
     document.getElementById("gen-btn").disabled   = true;
     document.getElementById("report-error").style.display = "none";
+
+    // 隐藏所有展示容器
+    document.getElementById("report-container").style.display = "none";
+    document.getElementById("story-container").style.display = "none";
+
+    // ── 数据故事模式 ──────────────────────────────────────
+    if (mode === "story") {
+        _showOverlay(mode);
+        try {
+            const res  = await fetch("/api/report/story", {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+            const data = await res.json();
+            await _hideOverlay();
+
+            if (!res.ok) {
+                const errEl = document.getElementById("report-error");
+                errEl.textContent   = data.error || "数据故事生成失败";
+                errEl.style.display = "block";
+                return;
+            }
+
+            renderStory(data);
+            document.getElementById("story-container").style.display = "block";
+        } catch (e) {
+            await _hideOverlay();
+            const errEl = document.getElementById("report-error");
+            errEl.textContent   = "网络错误：" + e.message;
+            errEl.style.display = "block";
+        } finally {
+            document.getElementById("gen-btn").disabled = false;
+        }
+        return;
+    }
+
+    // ── 简洁 / 详细模式 ──────────────────────────────────
     _showOverlay(mode);
+
+    // 尝试 SSE 流式（详细模式优先）
+    if (mode === "detailed" && window.EventSource !== undefined) {
+        try {
+            await _handleReportSSE(mode);
+            return;
+        } catch (sseErr) {
+            console.warn("SSE 流式失败，回退到标准请求:", sseErr);
+            // 回退到标准 POST
+        }
+    }
 
     try {
         const res  = await fetch("/api/report/generate", {
@@ -594,6 +747,147 @@ async function generateReport() {
     } finally {
         document.getElementById("gen-btn").disabled = false;
     }
+}
+
+// ── SSE 流式报告处理 ─────────────────────────────────────────
+async function _handleReportSSE(mode) {
+    const res = await fetch("/api/report/generate", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ mode, stream: true }),
+    });
+
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        await _hideOverlay();
+        const errEl = document.getElementById("report-error");
+        errEl.textContent   = data.error || "报告生成失败";
+        errEl.style.display = "block";
+        document.getElementById("gen-btn").disabled = false;
+        return;
+    }
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let   buffer  = "";
+    let   fullMarkdown = "";
+
+    // 提前显示报告容器
+    document.getElementById("report-container").style.display = "block";
+    document.getElementById("report-title").textContent = "DataMind 数据分析报告 · 深度报告（4 Agent）";
+    document.getElementById("download-btn").style.display = "flex";
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            const payload = line.slice(6).trim();
+            if (payload === "[DONE]") continue;
+
+            try {
+                const event = JSON.parse(payload);
+
+                if (event.type === "chunk" && event.content) {
+                    fullMarkdown += event.content;
+                    // 流式渲染 markdown
+                    const reportEl = document.getElementById("report-html");
+                    reportEl.innerHTML = window.marked
+                        ? marked.parse(fullMarkdown)
+                        : fullMarkdown;
+                } else if (event.type === "progress") {
+                    // 更新进度
+                    const pct = Math.min(event.pct || 0, 95);
+                    document.getElementById("atk-progress-bar").style.width = pct + "%";
+                    document.getElementById("atk-pct").textContent = Math.round(pct) + "%";
+                } else if (event.type === "agent_step") {
+                    const stepIdx = event.index || 0;
+                    _activateStep(stepIdx);
+                    if (event.thought) {
+                        document.getElementById("atk-thought").textContent = event.thought;
+                    }
+                } else if (event.type === "complete") {
+                    fullMarkdown = event.content || fullMarkdown;
+                    _reportMarkdown = fullMarkdown;
+                    document.getElementById("report-html").innerHTML = window.marked
+                        ? marked.parse(fullMarkdown)
+                        : (event.html || fullMarkdown);
+                }
+            } catch (parseErr) {
+                // 跳过无法解析的行
+            }
+        }
+    }
+
+    if (!_reportMarkdown) _reportMarkdown = fullMarkdown;
+    await _hideOverlay();
+
+    const container = document.getElementById("report-container");
+    container.style.opacity   = "0";
+    container.style.transform = "translateY(12px)";
+    requestAnimationFrame(() => {
+        container.style.transition = "all 0.45s cubic-bezier(.16,1,.3,1)";
+        container.style.opacity    = "1";
+        container.style.transform  = "translateY(0)";
+    });
+
+    document.getElementById("gen-btn").disabled = false;
+}
+
+// ── 数据故事渲染 ─────────────────────────────────────────────
+/**
+ * 渲染数据故事到 story-container。
+ * @param {object} data - /api/report/story 返回的数据
+ */
+function renderStory(data) {
+    // 标题 & 副标题
+    document.getElementById("story-title").textContent    = data.title || "数据故事";
+    document.getElementById("story-subtitle").textContent = data.subtitle || "";
+
+    // 故事章节
+    const sectionsEl = document.getElementById("story-sections");
+    if (sectionsEl && data.sections) {
+        sectionsEl.innerHTML = data.sections.map(function (sec, i) {
+            const chartHtml = sec.chart_html || sec.chart || "";
+            return '<div class="story-section" style="animation: qs-fade-in .5s ease ' + (i * 0.12) + 's both">' +
+                '<h4 class="story-section-title">' +
+                    '<span class="story-section-num">' + (i + 1).toString().padStart(2, '0') + '</span>' +
+                    (sec.heading || sec.title || '') +
+                '</h4>' +
+                '<div class="story-section-body">' +
+                    '<p>' + (sec.narrative || sec.content || '') + '</p>' +
+                    (chartHtml ? '<div class="story-chart mt-3">' + chartHtml + '</div>' : '') +
+                '</div>' +
+            '</div>';
+        }).join("");
+    }
+
+    // 核心结论
+    const takeawaysEl = document.getElementById("story-takeaways-list");
+    if (takeawaysEl && data.takeaways) {
+        takeawaysEl.innerHTML = data.takeaways.map(function (t) {
+            return '<li class="mb-2 d-flex align-items-start gap-2">' +
+                '<span style="color:var(--yellow);flex-shrink:0">\u25B8</span>' +
+                '<span>' + t + '</span></li>';
+        }).join("");
+    }
+
+    // 动画入场
+    const container = document.getElementById("story-container");
+    container.style.opacity   = "0";
+    container.style.transform = "translateY(12px)";
+    requestAnimationFrame(function () {
+        container.style.transition = "all 0.45s cubic-bezier(.16,1,.3,1)";
+        container.style.opacity    = "1";
+        container.style.transform  = "translateY(0)";
+    });
+
+    document.getElementById("gen-btn").disabled = false;
 }
 
 // ── 下载 Markdown ─────────────────────────────────────────────

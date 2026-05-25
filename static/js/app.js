@@ -49,6 +49,7 @@ async function uploadFile(file) {
             statusEl.classList.add("loaded");
             updateStatusBar(data.row_count, data.column_count || 0);
             loadInsights();
+            fetchQualityScore();
             if (window.initOverviewPage) window.initOverviewPage();
         } else {
             statusEl.textContent = "上传失败";
@@ -388,4 +389,85 @@ function setupAISettings() {
         .then(r => r.json())
         .then(d => refreshDot(d.current?.api_key))
         .catch(() => {});
+}
+
+// ════════════════════════════════════════════════════════════
+//  数据质量评分卡
+// ════════════════════════════════════════════════════════════
+
+/**
+ * 获取并渲染数据质量评分卡。
+ */
+async function fetchQualityScore() {
+    try {
+        var resp = await fetch('/api/data/quality');
+        if (!resp.ok) return;
+        var data = await resp.json();
+        renderQualityScore(data);
+    } catch (e) {
+        // 质量评分获取失败，静默处理
+    }
+}
+
+/**
+ * 渲染质量评分卡 UI。
+ * @param {object} data - QualityScorer.score() 返回的数据
+ */
+function renderQualityScore(data) {
+    var card = document.getElementById('quality-scorecard');
+    if (!card) return;
+    card.style.display = 'block';
+
+    // 环形评分
+    var score = data.total_score || 0;
+    document.getElementById('quality-score').textContent = score;
+    document.getElementById('quality-grade').textContent = '等级 ' + (data.grade || '--');
+
+    // 环形进度条动画
+    var circumference = 2 * Math.PI * 52; // ~327
+    var dashOffset = circumference * (1 - score / 100);
+    var ring = document.getElementById('quality-ring-fill');
+    ring.setAttribute('stroke-dasharray', circumference);
+    ring.setAttribute('stroke-dashoffset', dashOffset);
+
+    // 根据等级设置颜色
+    var colors = { 'A': '#34D399', 'B': '#4F9FFF', 'C': '#F59E0B', 'D': '#EF4444' };
+    ring.setAttribute('stroke', colors[data.grade] || 'var(--blue)');
+
+    // 5 维度柱状条
+    var dimsContainer = document.getElementById('quality-dimensions');
+    if (dimsContainer && data.dimensions) {
+        var html = '';
+        var dimNames = {
+            'completeness': '完整性', 'uniqueness': '唯一性',
+            'consistency': '一致性', 'timeliness': '时效性', 'accuracy': '准确性',
+        };
+        for (var key in data.dimensions) {
+            var dim = data.dimensions[key];
+            var name = dimNames[key] || key;
+            var barColor = dim.score >= 80 ? 'var(--green)' :
+                           dim.score >= 60 ? 'var(--yellow)' : 'var(--red)';
+            html += '<div class="quality-dim-item">' +
+                '<div class="quality-dim-label">' +
+                    '<span>' + name + '</span>' +
+                    '<span>' + dim.score + '</span>' +
+                '</div>' +
+                '<div class="quality-dim-bar-bg">' +
+                    '<div class="quality-dim-bar-fill" style="width:' + dim.score +
+                    '%;background:' + barColor + '"></div>' +
+                '</div>' +
+            '</div>';
+        }
+        dimsContainer.innerHTML = html;
+    }
+
+    // 改进建议
+    var sugContainer = document.getElementById('quality-suggestions');
+    if (sugContainer && data.suggestions) {
+        sugContainer.innerHTML = data.suggestions.map(function (s) {
+            return '<div class="quality-suggestion-item">' +
+                '<i class="bi bi-exclamation-triangle me-2" style="color:var(--yellow)"></i>' +
+                s + '</div>';
+        }).join('');
+    }
 }
