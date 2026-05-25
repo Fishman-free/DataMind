@@ -1330,6 +1330,25 @@ main.flex-grow-1 > * {
   font-weight: 500;
 }
 
+/* visualization chart card sizing guard */
+#adaptive-charts-grid .chart-card {
+  min-height: 360px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+#adaptive-charts-grid .chart-card .card-body {
+  flex: 1;
+  min-height: 300px;
+}
+#adaptive-charts-grid [id^="chart-slot-"] {
+  width: 100%;
+  height: 300px !important;
+}
+@media (max-width: 1440px) {
+  #adaptive-charts-grid [id^="chart-slot-"] { height: 260px !important; }
+}
+
 /* ── 34a. Chat typing indicator ──────────────────────────────────── */
 .typing-dots {
   display: inline-flex;

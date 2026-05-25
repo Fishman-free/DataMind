@@ -37,6 +37,43 @@ function _layout(extra) {
     return Object.assign({}, _DARK_BASE, extra);
 }
 
+function _safeResize(el) {
+    if (!el || !window.Plotly || !Plotly.Plots || typeof Plotly.Plots.resize !== 'function') return;
+    requestAnimationFrame(function () {
+        try { Plotly.Plots.resize(el); } catch (_) {}
+    });
+}
+
+function _ensureVisibleAndRender(el, renderFn) {
+    if (!el || typeof renderFn !== 'function') return;
+    var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { width: 0, height: 0 };
+    if (rect.width <= 0 || rect.height <= 0) {
+        setTimeout(function () {
+            try {
+                renderFn();
+                _safeResize(el);
+            } catch (_) {}
+        }, 80);
+        return;
+    }
+    renderFn();
+    _safeResize(el);
+}
+
+function _bindAdaptiveResizeGuard() {
+    if (window.__adaptiveResizeGuardBound) return;
+    window.__adaptiveResizeGuardBound = true;
+
+    var timer = null;
+    window.addEventListener('resize', function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+            var slots = document.querySelectorAll('[id^="chart-slot-"]');
+            slots.forEach(function (slot) { _safeResize(slot); });
+        }, 120);
+    });
+}
+
 // ── 页面入口 ──────────────────────────────────────────────────
 window.initVisualizationPage = async function () {
     var noDataAlert   = document.getElementById('no-data-alert');
@@ -364,6 +401,7 @@ function _updateProfileBadge(profile) {
 async function _renderAdaptiveDashboard(profile) {
     var grid = document.getElementById('adaptive-charts-grid');
     if (!grid) return;
+    _bindAdaptiveResizeGuard();
 
     // 显示加载骨架
     grid.innerHTML = Array(6).fill(0).map(function(_, i) {
@@ -422,27 +460,28 @@ function _renderChartSlot(index, cfg) {
     const opts = { responsive: true, displayModeBar: false };
 
     try {
-        switch (cfg.type) {
-            case 'histogram':
-                _plotHistogram(container, cfg.data, layout_base, opts); break;
-            case 'heatmap':
-                _plotHeatmap(container, cfg.data, layout_base, opts); break;
-            case 'scatter':
-                _plotScatter(container, cfg.data, layout_base, opts); break;
-            case 'bar':
-                _plotBar(container, cfg.data, layout_base, opts); break;
-            case 'bar_grouped':
-                _plotBarGrouped(container, cfg.data, layout_base, opts); break;
-            case 'box':
-                _plotBox(container, cfg.data, layout_base, opts); break;
-            case 'line':
-                _plotLine(container, cfg.data, layout_base, opts); break;
-            default:
-                // 原有零售图表：data/layout 格式
-                if (cfg.data && cfg.data.data) {
-                    Plotly.react(container, cfg.data.data, Object.assign({}, layout_base, cfg.data.layout || {}), opts);
-                }
-        }
+        _ensureVisibleAndRender(container, function () {
+            switch (cfg.type) {
+                case 'histogram':
+                    _plotHistogram(container, cfg.data, layout_base, opts); break;
+                case 'heatmap':
+                    _plotHeatmap(container, cfg.data, layout_base, opts); break;
+                case 'scatter':
+                    _plotScatter(container, cfg.data, layout_base, opts); break;
+                case 'bar':
+                    _plotBar(container, cfg.data, layout_base, opts); break;
+                case 'bar_grouped':
+                    _plotBarGrouped(container, cfg.data, layout_base, opts); break;
+                case 'box':
+                    _plotBox(container, cfg.data, layout_base, opts); break;
+                case 'line':
+                    _plotLine(container, cfg.data, layout_base, opts); break;
+                default:
+                    if (cfg.data && cfg.data.data) {
+                        Plotly.react(container, cfg.data.data, Object.assign({}, layout_base, cfg.data.layout || {}), opts);
+                    }
+            }
+        });
     } catch(e) {
         console.error('图表渲染失败 slot', index, e);
         container.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.3);font-size:0.82em">图表渲染失败</div>';
@@ -460,6 +499,7 @@ function _plotHistogram(el, data, layout, opts) {
         };
     });
     Plotly.react(el, traces, Object.assign({}, layout, { barmode: 'overlay' }), opts);
+    _safeResize(el);
 }
 
 function _plotHeatmap(el, data, layout, opts) {
@@ -483,6 +523,7 @@ function _plotScatter(el, data, layout, opts) {
         xaxis: Object.assign({}, layout.xaxis, { title: d.x_col }),
         yaxis: Object.assign({}, layout.yaxis, { title: d.y_col })
     }), opts);
+    _safeResize(el);
 }
 
 function _plotBar(el, data, layout, opts) {
@@ -491,6 +532,7 @@ function _plotBar(el, data, layout, opts) {
         type: 'bar', x: data.labels, y: data.counts,
         marker: { color: 'rgba(0,212,255,0.75)' },
     }], layout, opts);
+    _safeResize(el);
 }
 
 function _plotBarGrouped(el, data, layout, opts) {
@@ -503,6 +545,7 @@ function _plotBarGrouped(el, data, layout, opts) {
         text: removed.map(function(v) { return v > 0 ? v + ' 行' : '无变化'; }),
         textposition: 'auto',
     }], layout, opts);
+    _safeResize(el);
 }
 
 function _plotBox(el, data, layout, opts) {
@@ -518,12 +561,14 @@ function _plotBox(el, data, layout, opts) {
         };
     });
     Plotly.react(el, traces, layout, opts);
+    _safeResize(el);
 }
 
 function _plotLine(el, data, layout, opts) {
     if (!data) return;
     if (data.data && data.layout) {
         Plotly.react(el, data.data, Object.assign({}, layout, data.layout || {}), opts);
+        _safeResize(el);
     }
 }
 
