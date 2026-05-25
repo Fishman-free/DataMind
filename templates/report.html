@@ -496,7 +496,7 @@ let _thoughtTimer = null, _progressTimer = null, _stepTimers = [], _elapsedTimer
 let _stepDone = [], _startTime = 0, _currentStepCount = 6;
 
 // ── 模式切换提示文字 ───────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
+function _initModeHints() {
     document.querySelectorAll("input[name='report-mode']").forEach(radio => {
         radio.addEventListener("change", () => {
             const hint = document.getElementById("mode-hint");
@@ -507,7 +507,13 @@ document.addEventListener("DOMContentLoaded", () => {
                     : "精简快速";
         });
     });
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initModeHints);
+} else {
+    _initModeHints();
+}
 
 (async function () {
     const res = await fetch("/api/data/summary");
@@ -690,7 +696,7 @@ async function generateReport() {
     _showOverlay(mode);
 
     // 尝试 SSE 流式（详细模式优先）
-    if (mode === "detailed" && window.EventSource !== undefined) {
+    if (mode === "detailed" && typeof supportsSSE === 'function' && supportsSSE()) {
         try {
             await _handleReportSSE(mode);
             return;
@@ -750,93 +756,85 @@ async function generateReport() {
 }
 
 // ── SSE 流式报告处理 ─────────────────────────────────────────
-async function _handleReportSSE(mode) {
-    const res = await fetch("/api/report/generate", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ mode, stream: true }),
-    });
+function _handleReportSSE(mode) {
+    return fetch('/api/report/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: mode, stream: 'true' }),
+    }).then(async function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
 
-    if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        await _hideOverlay();
-        const errEl = document.getElementById("report-error");
-        errEl.textContent   = data.error || "报告生成失败";
-        errEl.style.display = "block";
-        document.getElementById("gen-btn").disabled = false;
-        return;
-    }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullContent = '';
+        let agentSections = {};
 
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let   buffer  = "";
-    let   fullMarkdown = "";
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-    // 提前显示报告容器
-    document.getElementById("report-container").style.display = "block";
-    document.getElementById("report-title").textContent = "DataMind 数据分析报告 · 深度报告（4 Agent）";
-    document.getElementById("download-btn").style.display = "flex";
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.substring(6);
+                if (dataStr === '[DONE]') continue;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+                try {
+                    const msg = JSON.parse(dataStr);
 
-        for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const payload = line.slice(6).trim();
-            if (payload === "[DONE]") continue;
+                    switch (msg.type) {
+                        case 'report_start':
+                            document.getElementById('report-container').style.display = 'block';
+                            break;
 
-            try {
-                const event = JSON.parse(payload);
+                        case 'agent_progress':
+                            var agentNames = {
+                                'statistics': 1, 'insight': 2, 'qa': 3, 'synthesis': 4
+                            };
+                            var stepIdx = agentNames[msg.agent];
+                            if (stepIdx !== undefined) _activateStep(stepIdx);
+                            break;
 
-                if (event.type === "chunk" && event.content) {
-                    fullMarkdown += event.content;
-                    // 流式渲染 markdown
-                    const reportEl = document.getElementById("report-html");
-                    reportEl.innerHTML = window.marked
-                        ? marked.parse(fullMarkdown)
-                        : fullMarkdown;
-                } else if (event.type === "progress") {
-                    // 更新进度
-                    const pct = Math.min(event.pct || 0, 95);
-                    document.getElementById("atk-progress-bar").style.width = pct + "%";
-                    document.getElementById("atk-pct").textContent = Math.round(pct) + "%";
-                } else if (event.type === "agent_step") {
-                    const stepIdx = event.index || 0;
-                    _activateStep(stepIdx);
-                    if (event.thought) {
-                        document.getElementById("atk-thought").textContent = event.thought;
+                        case 'agent_error':
+                            console.warn('Agent error:', msg.agent, msg.message);
+                            break;
+
+                        case 'section':
+                            agentSections[msg.agent] = msg.content;
+                            fullContent = [
+                                agentSections['statistics'] || '',
+                                agentSections['insight'] || '',
+                                agentSections['qa'] || '',
+                                agentSections['synthesis'] || '',
+                            ].filter(Boolean).join('\n\n---\n\n');
+
+                            var reportEl = document.getElementById('report-html');
+                            reportEl.innerHTML = window.marked
+                                ? marked.parse(fullContent)
+                                : fullContent.replace(/\n/g, '<br>');
+                            break;
+
+                        case 'report_done':
+                            _reportMarkdown = fullContent;
+                            document.getElementById('report-html').innerHTML = window.marked
+                                ? marked.parse(fullContent)
+                                : fullContent.replace(/\n/g, '<br>');
+                            document.getElementById('download-btn').style.display = 'flex';
+                            break;
                     }
-                } else if (event.type === "complete") {
-                    fullMarkdown = event.content || fullMarkdown;
-                    _reportMarkdown = fullMarkdown;
-                    document.getElementById("report-html").innerHTML = window.marked
-                        ? marked.parse(fullMarkdown)
-                        : (event.html || fullMarkdown);
+                } catch (e) {
+                    // skip malformed JSON
                 }
-            } catch (parseErr) {
-                // 跳过无法解析的行
             }
         }
-    }
 
-    if (!_reportMarkdown) _reportMarkdown = fullMarkdown;
-    await _hideOverlay();
-
-    const container = document.getElementById("report-container");
-    container.style.opacity   = "0";
-    container.style.transform = "translateY(12px)";
-    requestAnimationFrame(() => {
-        container.style.transition = "all 0.45s cubic-bezier(.16,1,.3,1)";
-        container.style.opacity    = "1";
-        container.style.transform  = "translateY(0)";
+        document.getElementById("gen-btn").disabled = false;
+        await _hideOverlay();
     });
-
-    document.getElementById("gen-btn").disabled = false;
 }
 
 // ── 数据故事渲染 ─────────────────────────────────────────────

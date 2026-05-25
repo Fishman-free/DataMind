@@ -70,17 +70,20 @@ function generateChart() {
         .then(function (data) {
             if (data.success && data.chart) {
                 _currentChartData = data.chart;
+                _currentChartCode = data.code || '';
                 renderChart(data.chart);
                 // 保存代码（从 explanation 中提取，实际应由后端返回）
                 statusEl.textContent = '\u2713 ' + (data.explanation || '生成成功');
                 statusEl.style.color = 'var(--green)';
             } else {
+                _currentChartCode = '';
                 statusEl.textContent = '\u2717 ' + (data.explanation || '生成失败');
                 statusEl.style.color = 'var(--red)';
             }
             btn.disabled = false;
         })
         .catch(function (err) {
+            _currentChartCode = '';
             statusEl.textContent = '\u2717 网络错误：' + err.message;
             statusEl.style.color = 'var(--red)';
             btn.disabled = false;
@@ -102,6 +105,7 @@ function quickChartAction(action) {
     };
     var prompt = prompts[action] || action;
     document.getElementById('chart-input').value = prompt;
+    _currentChartCode = '';
     generateChart();
 }
 
