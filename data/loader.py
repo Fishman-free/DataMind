@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import csv
 import os
 from pathlib import Path
 
@@ -33,20 +34,32 @@ def _detect_encoding(file_path: str) -> str:
     return encoding if confidence >= 0.6 else "utf-8"
 
 
+def _detect_separator(file_path: str, encoding: str) -> str:
+    """用 csv.Sniffer 自动检测分隔符，候选集: , ; \\t |"""
+    try:
+        with open(file_path, encoding=encoding, errors="replace") as f:
+            sample = f.read(8192)
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        return dialect.delimiter
+    except csv.Error:
+        return ","
+
+
 def _read_csv(file_path: str) -> pd.DataFrame:
     """
-    读取 CSV，按优先级尝试编码：
-    chardet 检测 → utf-8 → gbk → latin1
+    读取 CSV，自动检测编码和分隔符。
+    编码优先级：chardet → utf-8 → gbk → latin1
+    分隔符：csv.Sniffer 自动嗅探（, ; \\t |），失败回退逗号
     """
     encodings = [_detect_encoding(file_path), "utf-8", "gbk", "latin1"]
-    # 去重同时保持顺序
     seen: set[str] = set()
     unique_encodings = [e for e in encodings if not (e in seen or seen.add(e))]  # type: ignore[func-returns-value]
 
     last_err: Exception = Exception("unknown")
     for enc in unique_encodings:
         try:
-            return pd.read_csv(file_path, encoding=enc)
+            sep = _detect_separator(file_path, enc)
+            return pd.read_csv(file_path, encoding=enc, sep=sep)
         except (UnicodeDecodeError, LookupError) as e:
             last_err = e
             continue
