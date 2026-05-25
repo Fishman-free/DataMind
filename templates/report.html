@@ -405,6 +405,18 @@
     padding: 2px 8px;
     letter-spacing: .04em;
 }
+.story-highlight {
+    display: inline-block;
+    margin: 6px 0 10px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    background: rgba(79,159,255,0.12);
+    border: 1px solid rgba(79,159,255,0.25);
+    font-size: .82rem;
+    font-weight: 600;
+    color: #4F9FFF;
+    letter-spacing: .02em;
+}
 .story-section-body {
     font-size: .92rem;
     line-height: 1.8;
@@ -679,8 +691,27 @@ async function generateReport() {
                 return;
             }
 
-            renderStory(data);
+            // 先显示容器，再渲染内容，确保入场动画在可见元素上执行
             document.getElementById("story-container").style.display = "block";
+            renderStory(data);
+
+            // 构建故事 Markdown 文本供下载（含 highlight）
+            var md = '# ' + (data.title || '数据故事') + '\n\n';
+            if (data.subtitle) md += '> ' + data.subtitle + '\n\n';
+            if (data.sections) {
+                data.sections.forEach(function (sec, i) {
+                    md += '## ' + (i + 1) + '. ' + (sec.heading || sec.title || '') + '\n\n';
+                    if (sec.highlight) md += '**' + sec.highlight + '**\n\n';
+                    md += (sec.body || sec.narrative || sec.content || '') + '\n\n';
+                });
+            }
+            var takeaways = data.key_takeaways || data.takeaways;
+            if (takeaways && takeaways.length) {
+                md += '## 核心结论\n\n';
+                takeaways.forEach(function (t) { md += '- ' + t + '\n'; });
+            }
+            _reportMarkdown = md;
+            document.getElementById("download-btn").style.display = "flex";
         } catch (e) {
             await _hideOverlay();
             const errEl = document.getElementById("report-error");
@@ -803,6 +834,15 @@ function _handleReportSSE(mode) {
                             console.warn('Agent error:', msg.agent, msg.message);
                             break;
 
+                        case 'error':
+                            console.error('SSE 错误：', msg.message);
+                            var errEl = document.getElementById("report-error");
+                            if (errEl) {
+                                errEl.textContent = msg.message || '报告生成过程中发生错误';
+                                errEl.style.display = 'block';
+                            }
+                            break;
+
                         case 'section':
                             agentSections[msg.agent] = msg.content;
                             fullContent = [
@@ -820,9 +860,17 @@ function _handleReportSSE(mode) {
 
                         case 'report_done':
                             _reportMarkdown = fullContent;
+                            // 设置标题和时间戳
+                            document.getElementById("report-title").textContent = "DataMind 深度数据分析报告 · 深度报告（4 Agent）";
+                            document.getElementById("report-timestamp").textContent = "生成于 " + new Date().toLocaleString();
+                            // 添加一级标题包装
+                            var wrappedContent = '# DataMind 深度数据分析报告\n\n' +
+                                '> 本报告由 4 个专注 AI Agent 协作生成\n\n---\n\n' +
+                                fullContent;
+                            _reportMarkdown = wrappedContent;
                             document.getElementById('report-html').innerHTML = window.marked
-                                ? marked.parse(fullContent)
-                                : fullContent.replace(/\n/g, '<br>');
+                                ? marked.parse(wrappedContent)
+                                : wrappedContent.replace(/\n/g, '<br>');
                             document.getElementById('download-btn').style.display = 'flex';
                             break;
                     }
@@ -852,13 +900,15 @@ function renderStory(data) {
     if (sectionsEl && data.sections) {
         sectionsEl.innerHTML = data.sections.map(function (sec, i) {
             const chartHtml = sec.chart_html || sec.chart || "";
+            const highlight = sec.highlight || "";
             return '<div class="story-section" style="animation: qs-fade-in .5s ease ' + (i * 0.12) + 's both">' +
                 '<h4 class="story-section-title">' +
                     '<span class="story-section-num">' + (i + 1).toString().padStart(2, '0') + '</span>' +
                     (sec.heading || sec.title || '') +
                 '</h4>' +
+                (highlight ? '<div class="story-highlight">' + highlight + '</div>' : '') +
                 '<div class="story-section-body">' +
-                    '<p>' + (sec.narrative || sec.content || '') + '</p>' +
+                    '<p>' + (sec.body || sec.narrative || sec.content || '') + '</p>' +
                     (chartHtml ? '<div class="story-chart mt-3">' + chartHtml + '</div>' : '') +
                 '</div>' +
             '</div>';
@@ -867,8 +917,9 @@ function renderStory(data) {
 
     // 核心结论
     const takeawaysEl = document.getElementById("story-takeaways-list");
-    if (takeawaysEl && data.takeaways) {
-        takeawaysEl.innerHTML = data.takeaways.map(function (t) {
+    if (takeawaysEl && (data.key_takeaways || data.takeaways)) {
+        var takeaways = data.key_takeaways || data.takeaways;
+        takeawaysEl.innerHTML = takeaways.map(function (t) {
             return '<li class="mb-2 d-flex align-items-start gap-2">' +
                 '<span style="color:var(--yellow);flex-shrink:0">\u25B8</span>' +
                 '<span>' + t + '</span></li>';

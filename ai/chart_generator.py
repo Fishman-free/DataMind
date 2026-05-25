@@ -25,6 +25,19 @@ class ChartGenerator:
 6. 数据已存在于 `df` 变量中，可直接使用
 7. 不需要 import pandas 或读取文件
 
+【颜色/色系指导】当用户要求修改颜色、色系、配色方案时：
+- 莫兰迪色系（Morandi）：低饱和度灰调色，参考色值 —
+  灰棕 #C2A899、雾蓝 #8B9DAF、灰绿 #A3B5A6、灰粉 #C4B7A6、
+  灰紫 #9B8EA8、灰黄 #B8AA8E、灰橙 #C49A8A、鼠尾草绿 #9CAF9C
+- 修改方式：设置 trace 的 marker_color 或 marker.colors 属性
+- 柱状图/散点图：给每个 trace 设置 marker=dict(color=[色值列表])
+- 饼图：设置 marker=dict(colors=[色值列表])
+- 折线图：设置 line=dict(color='色值')
+
+【修改图表区分】收到修改请求时，判断是：
+- "改样式"（改色系、改主题、改标题）：只修改样式属性，保持数据不变
+- "改数据"（按季度、只看Top5、改图表类型）：重新处理数据
+
 支持的图表类型：散点图、折线图、柱状图、饼图、面积图、热力图、箱线图、散点矩阵、桑基图、漏斗图、仪表盘、气泡图
 """
 
@@ -69,6 +82,8 @@ class ChartGenerator:
                 }
 
             result = self._execute_chart_code(code, df)
+            if result.get("success"):
+                result["code"] = code
             return result
 
         except Exception as exc:
@@ -99,6 +114,7 @@ class ChartGenerator:
 
         if previous_chart:
             user_prompt += f"\n\n当前图表（请基于此修改）：\n{json.dumps(previous_chart, ensure_ascii=False)[:2000]}"
+            user_prompt += "\n\n提示：如果用户要求修改颜色、色系、主题等样式，只修改样式属性（marker/colorscale/line color），保持数据查询逻辑不变。"
 
         try:
             resp = self._client.chat.completions.create(
@@ -108,7 +124,7 @@ class ChartGenerator:
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                max_tokens=800,
+                max_tokens=2500,
             )
             content = resp.choices[0].message.content or ""
             return self._extract_code(content)
@@ -131,7 +147,7 @@ class ChartGenerator:
 
     def _extract_code(self, text: str) -> str | None:
         """从 AI 响应中提取 Python 代码块。"""
-        pattern = r"```python\s*\n(.*?)```"
+        pattern = r"```python\s*(.*?)```"
         matches = re.findall(pattern, text, re.DOTALL)
         if matches:
             return matches[0].strip()
@@ -162,6 +178,7 @@ class ChartGenerator:
                 "df": df.copy(),
                 "pd": pd,
                 "np": __import__("numpy"),
+                "json": __import__("json"),
             }
             # 预先导入 plotly
             exec_globals["go"] = __import__("plotly.graph_objects", fromlist=["graph_objects"])
@@ -184,6 +201,9 @@ class ChartGenerator:
                     "explanation": "chart 变量不是有效的 Plotly Figure 对象",
                 }
 
+            # 递归清理 numpy 类型，确保 JSON 可序列化
+            chart_json = _sanitize_numpy(chart_json)
+
             return {
                 "success": True,
                 "chart": chart_json,
@@ -200,3 +220,23 @@ class ChartGenerator:
                 "success": False,
                 "explanation": f"代码执行错误：{e}",
             }
+
+
+# ── 工具函数 ──────────────────────────────────────────────
+
+def _sanitize_numpy(obj: Any) -> Any:
+    """递归遍历对象，将 numpy 类型转为 Python 原生类型，确保 JSON 可序列化。"""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize_numpy(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_numpy(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return _sanitize_numpy(obj.tolist())
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    return obj

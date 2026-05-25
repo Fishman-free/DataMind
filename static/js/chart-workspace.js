@@ -13,7 +13,8 @@ let _currentChartCode = '';
  * 初始化图表工作台。
  */
 function initChartWorkspace() {
-    if (!supportsSSE()) {
+    // 图表工作台使用普通 fetch，不依赖 SSE。只需检查基本功能。
+    if (typeof fetch === 'undefined' || typeof Plotly === 'undefined') {
         document.getElementById('chart-ws-fallback').style.display = 'block';
         document.getElementById('chart-ws').style.display = 'none';
         return;
@@ -72,12 +73,20 @@ function generateChart() {
                 _currentChartData = data.chart;
                 _currentChartCode = data.code || '';
                 renderChart(data.chart);
-                // 保存代码（从 explanation 中提取，实际应由后端返回）
+                // 同步工作台图表到对话区的最新气泡
+                if (typeof window.updateChatChartFromWorkspace === 'function') {
+                    window.updateChatChartFromWorkspace(data.chart);
+                }
                 statusEl.textContent = '\u2713 ' + (data.explanation || '生成成功');
                 statusEl.style.color = 'var(--green)';
             } else {
                 _currentChartCode = '';
-                statusEl.textContent = '\u2717 ' + (data.explanation || '生成失败');
+                var errMsg = data.explanation || '生成失败';
+                // 语法错误 / 代码执行错误给出更友好的提示
+                if (errMsg.indexOf('语法错误') >= 0) {
+                    errMsg += '（AI 生成的代码有误，请简化描述或换种说法重试）';
+                }
+                statusEl.textContent = '\u2717 ' + errMsg;
                 statusEl.style.color = 'var(--red)';
             }
             btn.disabled = false;
@@ -102,6 +111,7 @@ function quickChartAction(action) {
         'top5': '只显示 Top 5',
         'dark': '使用深色主题',
         'light': '使用浅色主题',
+        'morandi': '使用莫兰迪色系配色，低饱和度灰调色',
     };
     var prompt = prompts[action] || action;
     document.getElementById('chart-input').value = prompt;
@@ -111,16 +121,33 @@ function quickChartAction(action) {
 
 /**
  * 在图表区域渲染 Plotly 图表。
+ * 兼容两种格式：{data, layout} 标准格式 和 裸数组格式。
  * @param {object} chartData - Plotly JSON
  */
 function renderChart(chartData) {
     var container = document.getElementById('chart-plot-area');
-    if (typeof Plotly !== 'undefined') {
-        Plotly.react(container, chartData.data || [], chartData.layout || {}, {
+    if (typeof Plotly === 'undefined' || !container) return;
+    try {
+        // 兼容标准 {data, layout} 格式和裸数组格式（与 _injectChart 对齐）
+        var traces, layout;
+        if (chartData && chartData.data !== undefined) {
+            traces = chartData.data || [];
+            layout = chartData.layout || {};
+        } else if (Array.isArray(chartData)) {
+            traces = chartData;
+            layout = {};
+        } else {
+            // 降级：将整个 chartData 当作 data 数组尝试
+            traces = chartData ? [chartData] : [];
+            layout = {};
+        }
+        Plotly.react(container, traces, layout, {
             responsive: true,
             displayModeBar: true,
             modeBarButtonsToRemove: ['lasso2d', 'select2d'],
         });
+    } catch (e) {
+        console.error('工作台图表渲染失败:', e);
     }
 }
 

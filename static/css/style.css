@@ -2247,3 +2247,64 @@ main.flex-grow-1 > * {
     0%, 100% { opacity: 0.3; transform: scale(0.8); }
     50% { opacity: 1; transform: scale(1.2); }
 }
+
+/* ── 智能问答内联执行结果 ─────────────────────────────────── */
+.exec-result-inline {
+    margin: 6px 0 12px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px;
+    font-size: 12px;
+}
+.exec-label {
+    font-size: 11px;
+    color: #8899B8;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
+.exec-result-data {
+    background: rgba(0,0,0,.40);
+    border-radius: 6px;
+    padding: 8px 10px;
+    max-height: 200px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: #E8EEFF;
+}
+.exec-stdout {
+    background: rgba(0,0,0,.40);
+    border-radius: 6px;
+    padding: 6px 10px;
+    max-height: 150px;
+    overflow: auto;
+    white-space: pre-wrap;
+    color: rgba(0,229,160,.80);
+}
+.exec-stdout-details {
+    margin: 4px 0;
+}
+.exec-summary {
+    font-size: 11px;
+    color: #8899B8;
+    cursor: pointer;
+}
+.exec-no-output {
+    color: #8899B8;
+    font-size: 11px;
+    font-style: italic;
+}
+.exec-error {
+    background: rgba(255,77,109,.08);
+    border: 1px solid rgba(255,77,109,.18);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: rgba(255,150,170,0.9);
+}
+.exec-chart-inline {
+    margin: 8px 0 12px;
+    min-height: 300px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(0,0,0,.20);
+}

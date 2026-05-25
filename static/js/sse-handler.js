@@ -51,6 +51,18 @@ function supportsSSE() {
 function createSSEConnection(url, body, handlers) {
     const controller = new AbortController();
     let fullText = '';
+    let _streamDone = false;
+
+    // 120s 全局超时，防止连接僵死
+    var globalTimeout = setTimeout(function () {
+        if (!_streamDone) {
+            controller.abort();
+            _streamDone = true;
+            if (handlers.onError) {
+                handlers.onError('请求超时（120s），请重试');
+            }
+        }
+    }, 120000);
 
     fetch(url, {
         method: 'POST',
@@ -61,6 +73,7 @@ function createSSEConnection(url, body, handlers) {
         .then(function (response) {
             if (!response.ok) {
                 // 非 2xx 状态码，尝试解析 JSON 错误
+                clearTimeout(globalTimeout);
                 return response.json().then(function (errData) {
                     if (handlers.onError) {
                         handlers.onError(errData.error || '请求失败：' + response.status);
@@ -77,6 +90,7 @@ function createSSEConnection(url, body, handlers) {
             if (!contentType.includes('text/event-stream')) {
                 // 非 SSE 响应（可能是同步模式），当作 JSON 处理
                 return response.json().then(function (data) {
+                    clearTimeout(globalTimeout);
                     if (handlers.onDone) {
                         handlers.onDone(data);
                     }
@@ -104,12 +118,17 @@ function createSSEConnection(url, body, handlers) {
                     var line = lines[i];
 
                     if (line.startsWith('data: ')) {
-                        currentData = line.substring(6);
-                    } else if (line === 'data: [DONE]') {
-                        if (handlers.onDone) {
-                            handlers.onDone({ fullText: fullText });
+                        var payload = line.substring(6);
+                        if (payload === '[DONE]') {
+                            clearTimeout(globalTimeout);
+                            if (handlers.onDone && !_streamDone) {
+                                _streamDone = true;
+                                handlers.onDone({ fullText: fullText });
+                            }
+                            currentData = '';
+                            continue;
                         }
-                        return;
+                        currentData = payload;
                     }
 
                     if (currentData) {
@@ -121,7 +140,9 @@ function createSSEConnection(url, body, handlers) {
                                 fullText += msg.content;
                             }
                         } catch (e) {
-                            // JSON 解析失败，跳过此消息
+                            // JSON 解析失败，将残片拼回 buffer 防止丢失跨 chunk 数据
+                            console.warn('SSE JSON 解析失败，保留残片:', currentData.substring(0, 80));
+                            buffer = currentData + '\n' + buffer;
                         }
                         currentData = '';
                     }
@@ -131,9 +152,11 @@ function createSSEConnection(url, body, handlers) {
             function pump() {
                 return reader.read().then(function (result) {
                     if (result.done) {
-                        // 流结束但没收到 [DONE]，可能是异常
-                        if (handlers.onError) {
-                            handlers.onError('连接意外关闭');
+                        // 流自然结束，正常完成
+                        clearTimeout(globalTimeout);
+                        if (handlers.onDone && !_streamDone) {
+                            _streamDone = true;
+                            handlers.onDone({ fullText: fullText });
                         }
                         return;
                     }
@@ -145,8 +168,14 @@ function createSSEConnection(url, body, handlers) {
             return pump();
         })
         .catch(function (err) {
+            clearTimeout(globalTimeout);
             if (err.name === 'AbortError') {
-                return; // 用户主动取消，静默处理
+                // 用户主动取消或超时取消
+                if (handlers.onDone && !_streamDone) {
+                    _streamDone = true;
+                    handlers.onDone({ fullText: fullText, aborted: true });
+                }
+                return;
             }
             if (handlers.onError) {
                 handlers.onError('网络错误：' + err.message);
@@ -196,6 +225,9 @@ function dispatch(msg, handlers) {
             break;
         case 'done':
             if (handlers.onDone) handlers.onDone(msg);
+            break;
+        case 'heartbeat':
+            if (handlers.onHeartbeat) handlers.onHeartbeat();
             break;
         default:
             // 未知类型，调用通用进度 handler

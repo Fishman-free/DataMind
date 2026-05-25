@@ -68,6 +68,11 @@ UPLOAD_FOLDER      = os.path.join(os.path.dirname(__file__), "datasets")
 MAX_FILE_SIZE      = 50 * 1024 * 1024          # 50 MB
 ALLOWED_EXTENSIONS = {"csv", "xlsx", "json"}
 
+# ── AI 请求参数 ─────────────────────────────────────────
+AI_MAX_TOKENS      = int(os.getenv("AI_MAX_TOKENS", "4096"))
+AI_REQUEST_TIMEOUT = float(os.getenv("AI_REQUEST_TIMEOUT", "60.0"))
+CODE_EXEC_TIMEOUT  = int(os.getenv("CODE_EXEC_TIMEOUT", "30"))
+
 # ── Flask ────────────────────────────────────────────────
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "datamind-dev-secret-2026")
 DEBUG      = os.getenv("FLASK_DEBUG", "true").lower() == "true"

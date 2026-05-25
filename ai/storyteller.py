@@ -13,29 +13,41 @@ from typing import Any
 class Storyteller:
     """数据叙事引擎：AI 生成 + 规则降级。"""
 
-    _SYSTEM_PROMPT = """你是一个资深数据记者。将数据分析结果转化为引人入胜的数据故事。
+    _SYSTEM_PROMPT = """你是一位资深数据新闻记者，为财经媒体撰写数据驱动报道。
 
-返回严格 JSON 格式（不要 markdown 包裹）：
+你的报道遵循"华尔街日报体"叙事弧线：
+1. 开篇钩子 — 用一个最震撼的数据发现抓住读者
+2. 背景铺垫 — 解释数据来源和整体概况
+3. 数据深潜 — 逐层展开关键洞察，每个发现用数据锚定
+4. 结论启示 — 提出可执行的建议，呼应开头
+
+风格铁律：
+- 每个数字必须有其上下文对比（同比/环比/占比），孤立的数字无意义
+- 善用"相当于""约等于""超过 x 倍"等表述让数字可感知
+- 标题必须是数据驱动的判断句（如"Q4 暴增 45%：一场促销如何改写全年业绩"），而非"XX数据故事"或"XX分析报告"
+- 段落自然流畅，像在给读者讲故事而非罗列数据点
+- 全部使用中文
+
+返回严格 JSON 格式（不要 markdown 代码块包裹，直接输出裸 JSON）：
 {
-  "title": "故事大标题（吸引人但准确）",
-  "subtitle": "一句话摘要",
+  "title": "数据驱动的判断句标题，15-30字",
+  "subtitle": "一句话点明核心发现，10-20字",
   "sections": [
     {
-      "heading": "章节标题",
-      "body": "叙事段落（2-4句，自然流畅）",
-      "highlight": "关键数字（可选，如 Q4增长45%）"
+      "heading": "数据锚定的章节标题",
+      "body": "叙事段落，3-5句自然流畅的报道文字",
+      "highlight": "本章最关键的一个数据（如 Q4 增长 45%）"
     }
   ],
-  "key_takeaways": ["核心结论1", "核心结论2", "核心结论3"]
+  "key_takeaways": ["结论1", "结论2", "结论3"]
 }
 
-风格要求：
-- 标题生动有吸引力（参考数据新闻标题）
-- 段落自然流畅，像在讲故事而非罗列数据
-- 关键数字用 highlight 突出显示
-- key_takeaways 是 3-5 条可执行的建议或结论
-- section 数量 3-5 个
-- 全部使用中文
+要求：
+- sections 不少于 4 个，不多于 6 个
+- 每章 body 至少 3 句话
+- 每章必须有 highlight
+- key_takeaways 是 3-5 条具体的、可执行的建议
+- 避免使用"概述""分析""总结"等模板化标题
 """
 
     def __init__(self, client: Any = None):
@@ -72,18 +84,24 @@ class Storyteller:
         import config as _cfg
 
         # 构建上下文
-        parts = [f"数据集信息：\n{json.dumps(df_info, ensure_ascii=False, default=str)[:1000]}"]
+        parts = [f"数据集信息：\n{json.dumps(df_info, ensure_ascii=False, default=str)[:2000]}"]
         if insights:
-            parts.append(f"关键洞察：\n{json.dumps(insights[:5], ensure_ascii=False)[:800]}")
+            # 提取核心字段：title + detail，信息密度更高
+            compact = [
+                {"title": i.get("title", ""), "detail": i.get("detail", ""),
+                 "type": i.get("type", ""), "severity": i.get("severity", "")}
+                for i in insights[:8]
+            ]
+            parts.append(f"关键洞察：\n{json.dumps(compact, ensure_ascii=False)[:2500]}")
         if chat_history:
             qa_text = "\n".join(
                 f"Q: {m.get('content', '')}" if m.get("role") == "user"
                 else f"A: {m.get('content', '')}"
-                for m in chat_history[-6:]
+                for m in chat_history[-10:]
             )
-            parts.append(f"用户对话：\n{qa_text[:500]}")
+            parts.append(f"用户对话：\n{qa_text[:800]}")
         if report_content:
-            parts.append(f"分析报告：\n{report_content[:1500]}")
+            parts.append(f"分析报告：\n{report_content[:2500]}")
 
         user_prompt = "\n\n".join(parts)
 
@@ -94,8 +112,8 @@ class Storyteller:
                     {"role": "system", "content": self._SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.6,
-                max_tokens=1000,
+                temperature=0.7,
+                max_tokens=3000,
             )
             content = resp.choices[0].message.content or ""
             return self._parse_json(content)
@@ -124,7 +142,8 @@ class Storyteller:
         col_count = df_info.get("column_count", 0)
 
         # 从洞察中提取关键信息
-        insight_texts = [i.get("description", "") for i in (insights or [])[:3]]
+        insight_texts = [i.get("detail", "") or i.get("title", "") for i in (insights or [])[:3]]
+        insight_texts = [t for t in insight_texts if t]
         high_insights = [i for i in (insights or []) if i.get("severity") == "high"]
 
         title = f"数据分析报告：{col_count} 个维度 x {row_count} 条记录"
@@ -159,7 +178,7 @@ class Storyteller:
 
         key_takeaways = []
         if high_insights:
-            key_takeaways.append(high_insights[0].get("description", "关注高优先级洞察"))
+            key_takeaways.append(high_insights[0].get("detail", "") or high_insights[0].get("title", "关注高优先级洞察"))
         if row_count > 100:
             key_takeaways.append(f"建议对 {row_count} 条记录建立定期监控")
         key_takeaways.append("基于数据发现制定下一步行动计划")

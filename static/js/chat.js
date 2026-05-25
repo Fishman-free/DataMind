@@ -3,6 +3,10 @@
  * 来源：学生+AI
  */
 
+// ── 活跃连接追踪 ──────────────────────────────────────────
+var _activeSSEConnection = null;   // 当前活跃的 SSE 连接对象
+var _sendingLock        = false;   // 发送防抖锁
+
 // ── 页面初始化 ────────────────────────────────────────────
 window.initAnalysisPage = async function () {
     await loadChatHistory();
@@ -24,9 +28,19 @@ async function loadChatHistory() {
 
 // ── 发送消息 ──────────────────────────────────────────────
 async function sendChatMessage() {
+    // 防抖锁：上一次请求未完成前禁止发送
+    if (_sendingLock) return;
+
     const input    = document.getElementById("chat-input");
     const question = (input?.value || "").trim();
     if (!question) return;
+
+    // 中断上一个活跃的 SSE 连接
+    if (_activeSSEConnection) {
+        _activeSSEConnection.abort();
+        _activeSSEConnection = null;
+    }
+    _sendingLock = true;
 
     input.value = "";
     appendMessage("user", question);
@@ -36,10 +50,8 @@ async function sendChatMessage() {
     if (typeof supportsSSE === 'function' && supportsSSE()) {
         var bubble = appendMessage("assistant", "");
         bubble._fullText = "";
-        var codeBlock = null;
-        var execResult = null;
 
-        var conn = createSSEConnection('/api/chat', { question: question }, {
+        _activeSSEConnection = createSSEConnection('/api/chat', { question: question }, {
             onTextDelta: function (content) {
                 bubble._fullText += content;
                 var bodyEl = bubble.querySelector('.chat-msg-body');
@@ -50,39 +62,52 @@ async function sendChatMessage() {
                 }
                 scrollToBottom();
             },
-            onCodeComplete: function (code) {
-                var codeEl = document.getElementById("generated-code");
-                var pre    = document.getElementById("code-block");
-                if (codeEl && pre) {
-                    pre.textContent = code;
-                    if (window.hljs) hljs.highlightElement(pre);
-                    codeEl.style.display = "block";
+            onHeartbeat: function () {
+                // 代码执行中，显示心跳指示器
+                var existing = bubble.querySelector('.exec-result-inline');
+                if (!existing) {
+                    var div = document.createElement('div');
+                    div.className = 'exec-result-inline';
+                    div.innerHTML = '<span class="exec-heartbeat">代码执行中...</span>';
+                    var anchor = bubble.querySelector('.chat-msg-body');
+                    if (anchor) {
+                        anchor.parentNode.insertBefore(div, anchor.nextSibling);
+                    }
                 }
+            },
+            onCodeComplete: function (code) {
+                // 同步代码到图表工作台，供"复制代码"按钮使用
+                if (typeof _currentChartCode !== 'undefined') _currentChartCode = code;
             },
             onExecResult: function (msg) {
-                var resultEl = document.getElementById("exec-result");
-                if (!resultEl) return;
-                if (msg.success) {
-                    resultEl.innerHTML = msg.result != null
-                        ? '<pre class="bg-light p-2 rounded small">' + JSON.stringify(msg.result, null, 2) + '</pre>'
-                        : '<span class="text-muted small">执行成功，无返回值</span>';
-                    resultEl.style.display = "block";
-                } else if (msg.error) {
-                    resultEl.innerHTML = '<div class="alert alert-danger small py-1">' + msg.error + '</div>';
-                    resultEl.style.display = "block";
-                }
+                _injectExecResult(bubble, msg);
             },
             onChart: function (chartData) {
-                renderExecChart(chartData);
-                // 同时推送到图表工作台
+                _injectChart(bubble, chartData);
+                // 同时推送到图表工作台，并同步全局状态
                 if (typeof renderChart === 'function') {
                     renderChart(chartData);
                 }
+                if (typeof _currentChartData !== 'undefined') _currentChartData = chartData;
+                // 更新工作台状态提示，告知图表已来自对话
+                var statusEl = document.getElementById('chart-status');
+                if (statusEl) {
+                    statusEl.textContent = '\u2713 图表已同步自对话';
+                    statusEl.style.color = 'var(--green)';
+                }
             },
             onError: function (message) {
-                bubble.innerHTML += '<div class="text-danger">错误：' + message + '</div>';
+                var errDiv = document.createElement('div');
+                errDiv.className = 'text-danger';
+                errDiv.textContent = '错误：' + message;
+                bubble.appendChild(errDiv);
+                _activeSSEConnection = null;
+                _sendingLock = false;
+                setLoading(false);
             },
             onDone: function () {
+                _activeSSEConnection = null;
+                _sendingLock = false;
                 setLoading(false);
                 scrollToBottom();
             }
@@ -113,37 +138,21 @@ async function sendChatMessage() {
 
 function renderChatResponse(data) {
     // 文字回答
+    var bubble = null;
     if (data.answer) {
-        appendMessage("assistant", data.answer);
+        bubble = appendMessage("assistant", data.answer);
     }
-    // 生成的代码块
-    if (data.code) {
-        const codeEl = document.getElementById("generated-code");
-        const pre    = document.getElementById("code-block");
-        if (codeEl && pre) {
-            pre.textContent = data.code;
-            if (window.hljs) hljs.highlightElement(pre);
-            codeEl.style.display = "block";
-        }
-    }
-    // 执行结果 — 兼容平铺字段（后端实际格式）与 execution 嵌套格式
-    const exec = data.execution || (Object.prototype.hasOwnProperty.call(data, "success") ? data : null);
-    if (exec) {
-        const resultEl = document.getElementById("exec-result");
-        if (resultEl) {
-            if (exec.success) {
-                resultEl.innerHTML = exec.result != null
-                    ? `<pre class="bg-light p-2 rounded small">${JSON.stringify(exec.result, null, 2)}</pre>`
-                    : "<span class='text-muted small'>执行成功，无返回值</span>";
-                resultEl.style.display = "block";
-            } else if (exec.error) {
-                resultEl.innerHTML = `<div class="alert alert-danger small py-1">${exec.error}</div>`;
-                resultEl.style.display = "block";
-            }
-        }
-        // Plotly 图表
+    // 执行结果内联注入 — 兼容平铺字段（后端实际格式）与 execution 嵌套格式
+    var exec = data.execution || (Object.prototype.hasOwnProperty.call(data, "success") ? data : null);
+    if (exec && bubble) {
+        _injectExecResult(bubble, {
+            success: exec.success,
+            result: exec.result,
+            stdout: exec.stdout,
+            error: exec.error
+        });
         if (exec.chart) {
-            renderExecChart(exec.chart);
+            _injectChart(bubble, exec.chart);
         }
     }
 }
@@ -165,6 +174,13 @@ function renderExecChart(chartData) {
 
 // ── 重置对话 ──────────────────────────────────────────────
 async function resetChat() {
+    // 中断活跃的 SSE 连接并重置防抖锁
+    if (_activeSSEConnection) {
+        _activeSSEConnection.abort();
+        _activeSSEConnection = null;
+    }
+    _sendingLock = false;
+
     try {
         await fetch("/api/chat/reset", { method: "POST" });
         const messagesEl = document.getElementById("chat-messages");
@@ -244,4 +260,212 @@ function scrollToBottom() {
     if (container) {
         container.scrollTop = container.scrollHeight;
     }
+}
+
+// ── 内联执行结果注入 ──────────────────────────────────────
+
+/**
+ * HTML 转义，防止 XSS。
+ */
+function _escapeHtml(str) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+/**
+ * 格式化代码执行结果为 HTML。
+ * - 简单数值/字符串 → 高亮大字体显示
+ * - list of dict → 迷你 HTML 表格
+ * - dict → 键值对列表
+ * - 其他 → JSON 格式化
+ *
+ * @param {*} result - 执行结果值
+ * @returns {string} HTML 字符串
+ */
+function _formatResult(result) {
+    if (result == null) return '';
+
+    // 简单数值
+    if (typeof result === 'number') {
+        return '<div class="exec-result-number">' + _escapeHtml(String(result)) + '</div>';
+    }
+    // 字符串
+    if (typeof result === 'string') {
+        return '<div class="exec-result-text">' + _escapeHtml(result) + '</div>';
+    }
+    // 布尔值
+    if (typeof result === 'boolean') {
+        return '<div class="exec-result-number">' + (result ? 'true' : 'false') + '</div>';
+    }
+    // list of dict → 迷你表格
+    if (Array.isArray(result) && result.length > 0 && typeof result[0] === 'object' && result[0] !== null) {
+        var keys = Object.keys(result[0]);
+        var html = '<table class="exec-result-table"><thead><tr>';
+        for (var i = 0; i < keys.length; i++) {
+            html += '<th>' + _escapeHtml(keys[i]) + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (var r = 0; r < Math.min(result.length, 50); r++) {
+            html += '<tr>';
+            for (var k = 0; k < keys.length; k++) {
+                var val = result[r][keys[k]];
+                html += '<td>' + _escapeHtml(val != null ? String(val) : '') + '</td>';
+            }
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        if (result.length > 50) {
+            html += '<div class="exec-result-note">（仅显示前 50 条，共 ' + result.length + ' 条）</div>';
+        }
+        return html;
+    }
+    // dict → 键值对列表
+    if (typeof result === 'object' && !Array.isArray(result)) {
+        var dictHtml = '<dl class="exec-result-dict">';
+        var entries = Object.entries(result);
+        for (var e = 0; e < entries.length; e++) {
+            dictHtml += '<dt>' + _escapeHtml(String(entries[e][0])) + '</dt>';
+            var valStr = entries[e][1] != null ? String(entries[e][1]) : '';
+            dictHtml += '<dd>' + _escapeHtml(valStr) + '</dd>';
+        }
+        dictHtml += '</dl>';
+        return dictHtml;
+    }
+    // 数组（非 dict）
+    if (Array.isArray(result)) {
+        return '<div class="exec-result-data">' + _escapeHtml(JSON.stringify(result, null, 2)) + '</div>';
+    }
+    return '<div class="exec-result-data">' + _escapeHtml(JSON.stringify(result, null, 2)) + '</div>';
+}
+
+/**
+ * 在聊天气泡中内联渲染代码执行结果。
+ * 查找气泡中最后一个 <pre> 代码块，在其后插入结果 div。
+ *
+ * @param {HTMLElement} bubble - 聊天气泡 DOM 元素
+ * @param {object} msg - { success, result, stdout, error }
+ */
+function _injectExecResult(bubble, msg) {
+    if (!bubble) return;
+
+    // 找到气泡中最后一个 <pre> 代码块作为插入锚点
+    var preEls = bubble.querySelectorAll('pre');
+    var anchor = preEls.length > 0
+        ? preEls[preEls.length - 1]
+        : bubble.querySelector('.chat-msg-body');
+    if (!anchor) return;
+
+    // 移除已存在的旧结果
+    var existing = bubble.querySelector('.exec-result-inline');
+    if (existing) existing.remove();
+
+    var div = document.createElement('div');
+    div.className = 'exec-result-inline';
+
+    if (msg.success) {
+        var hasResult = msg.result != null;
+        var hasStdout = msg.stdout && String(msg.stdout).trim();
+
+        if (hasResult || hasStdout) {
+            var html = '';
+            if (hasStdout) {
+                html += '<div class="exec-label">输出</div>';
+                html += '<div class="exec-stdout">' + _escapeHtml(String(msg.stdout)) + '</div>';
+            }
+            if (hasResult) {
+                html += (hasStdout
+                    ? '<div class="exec-label" style="margin-top:6px">结果</div>'
+                    : '<div class="exec-label">结果</div>');
+                html += _formatResult(msg.result);
+            }
+            div.innerHTML = html;
+        } else {
+            div.innerHTML = '<span class="exec-no-output">执行成功，无返回值</span>';
+        }
+    } else if (msg.error) {
+        div.innerHTML = '<div class="exec-error">' + _escapeHtml(msg.error) + '</div>';
+    } else {
+        return;
+    }
+
+    // 插入到 anchor 之后
+    if (anchor.nextSibling) {
+        anchor.parentNode.insertBefore(div, anchor.nextSibling);
+    } else {
+        anchor.parentNode.appendChild(div);
+    }
+
+    scrollToBottom();
+}
+
+/**
+ * 在聊天气泡中内联渲染 Plotly 图表。
+ * 查找 exec-result-inline 或最后一个 <pre> 作为锚点，在其后插入图表容器。
+ *
+ * @param {HTMLElement} bubble - 聊天气泡 DOM 元素
+ * @param {object} chartData - Plotly 图表配置
+ */
+/**
+ * 工作台图表 → 对话气泡同步。
+ * 当 NL2Vis 工作台生成新图表时，更新对话区最近气泡中的内联图表，
+ * 使两侧始终展示相同图表。
+ *
+ * @param {object} chartData - Plotly 图表配置（{data, layout}）
+ */
+window.updateChatChartFromWorkspace = function (chartData) {
+    if (!chartData || !window.Plotly) return;
+    var container = document.getElementById('chat-messages');
+    if (!container) return;
+    // 找到最后一个内联图表元素并就地更新（不新增消息）
+    var inlineCharts = container.querySelectorAll('.exec-chart-inline');
+    if (inlineCharts.length === 0) return;
+    var lastChart = inlineCharts[inlineCharts.length - 1];
+    try {
+        var traces = (chartData.data !== undefined) ? (chartData.data || []) : [];
+        var layout = chartData.layout || {};
+        Plotly.react(lastChart, traces, layout, { responsive: true });
+        scrollToBottom();
+    } catch (e) {
+        console.error('工作台图表同步到对话失败:', e);
+    }
+};
+
+function _injectChart(bubble, chartData) {
+    if (!bubble || !chartData || !window.Plotly) return;
+
+    // 锚点优先选结果区，其次选最后一个代码块
+    var anchor = bubble.querySelector('.exec-result-inline');
+    if (!anchor) {
+        var preEls = bubble.querySelectorAll('pre');
+        anchor = preEls.length > 0
+            ? preEls[preEls.length - 1]
+            : bubble.querySelector('.chat-msg-body');
+    }
+    if (!anchor) return;
+
+    // 移除已存在的旧图表
+    var existing = bubble.querySelector('.exec-chart-inline');
+    if (existing) existing.remove();
+
+    var div = document.createElement('div');
+    div.className = 'exec-chart-inline';
+
+    if (anchor.nextSibling) {
+        anchor.parentNode.insertBefore(div, anchor.nextSibling);
+    } else {
+        anchor.parentNode.appendChild(div);
+    }
+
+    try {
+        if (chartData.data && chartData.layout !== undefined) {
+            Plotly.newPlot(div, chartData.data, chartData.layout || {}, { responsive: true });
+        } else {
+            Plotly.newPlot(div, chartData, {}, { responsive: true });
+        }
+    } catch (e) {
+        console.error("图表渲染失败:", e);
+    }
+
+    scrollToBottom();
 }

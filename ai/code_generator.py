@@ -9,8 +9,12 @@
 """
 from __future__ import annotations
 
+import io
+import json
 import re
 import textwrap
+import threading
+from contextlib import redirect_stdout
 from typing import Any
 
 import numpy as np
@@ -77,7 +81,7 @@ class CodeGenerator:
 
     def execute_safe(self, code: str, df: pd.DataFrame) -> dict[str, Any]:
         """
-        在受限命名空间中执行代码。
+        在受限命名空间中执行代码（带超时控制）。
 
         Parameters
         ----------
@@ -86,31 +90,72 @@ class CodeGenerator:
 
         Returns
         -------
-        {"success": True, "result": <value>, "chart": None}
+        {"success": True, "result": <value>, "stdout": <str or None>, "chart": None}
         {"success": False, "error": <msg>}
         """
+        # 安全校验必须在净化之前，防止净化后漏过危险代码（如 import os）
         if not self.validate_code(code):
             return {"success": False, "error": "代码包含禁止操作，已被拦截 blocked"}
+        # 净化：移除所有 import 语句（px/go/pd/np 均已预加载），防止沙盒 __import__ 报错
+        code = _sanitize_code(code)
 
-        namespace: dict[str, Any] = {
-            "__builtins__": _SAFE_BUILTINS,
-            "df": df.copy(),
-            "pd": pd,
-            "np": np,
-        }
+        import config as _cfg
+        exec_timeout = getattr(_cfg, "CODE_EXEC_TIMEOUT", 30)
 
-        try:
-            exec(textwrap.dedent(code), namespace)  # noqa: S102
-        except Exception as exc:
-            return {"success": False, "error": str(exc)}
+        result_holder: dict[str, Any] = {}
+        done_event = threading.Event()
 
-        raw = namespace.get("result")
-        chart = namespace.get("chart")
+        def _run():
+            # 预加载可视化库（plotly 可选，未安装时忽略）
+            _extra: dict[str, Any] = {}
+            try:
+                import plotly.express as _px
+                import plotly.graph_objects as _go
+                _extra["px"] = _px
+                _extra["go"] = _go
+            except ImportError:
+                pass
 
-        # 将 pandas 对象序列化为 Python 原生类型
-        result_val = _serialize(raw)
+            namespace: dict[str, Any] = {
+                "__builtins__": _SAFE_BUILTINS,
+                "df": df.copy(),
+                "pd": pd,
+                "np": np,
+                "json": __import__("json"),
+                **_extra,
+            }
+            stdout_buf = io.StringIO()
+            try:
+                with redirect_stdout(stdout_buf):
+                    exec(textwrap.dedent(code), namespace)  # noqa: S102
+                raw = namespace.get("result")
+                chart = namespace.get("chart")
+                # 如果 chart 是 plotly Figure 对象，转为可序列化的 JSON dict
+                if chart is not None and hasattr(chart, "to_plotly_json"):
+                    chart = chart.to_plotly_json()
+                result_val = _serialize(raw)
+                stdout_text = stdout_buf.getvalue().strip()
+                result_holder["result"] = {
+                    "success": True,
+                    "result": result_val,
+                    "chart": chart,
+                    "stdout": stdout_text if stdout_text else None,
+                }
+            except Exception as exc:
+                result_holder["result"] = {"success": False, "error": str(exc)}
+            finally:
+                done_event.set()
 
-        return {"success": True, "result": result_val, "chart": chart}
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+        finished = done_event.wait(timeout=exec_timeout)
+        if not finished:
+            # 超时：线程作为 daemon 会在进程退出时自动回收，
+            # Python 限制无法强制杀死线程，但返回超时错误。
+            return {"success": False, "error": f"代码执行超时（{exec_timeout}s），请简化分析逻辑"}
+
+        return result_holder.get("result", {"success": False, "error": "执行结果为空"})
 
     # ── 代码提取（静态工具方法）───────────────────────
 
@@ -152,7 +197,8 @@ class CodeGenerator:
                 model=_cfg.AI_MODEL,
                 messages=messages,
                 temperature=0.2,
-                max_tokens=1000,
+                max_tokens=_cfg.AI_MAX_TOKENS,
+                timeout=_cfg.AI_REQUEST_TIMEOUT,
             )
             # 防御性解析：兼容不同服务商响应结构
             raw_answer: str = _extract_content(response) or ""
@@ -226,24 +272,70 @@ def _extract_content(response: Any) -> str:
     return ""
 
 
+# 匹配所有 import 语句（所有常用库均已在执行命名空间中预加载，禁止额外 import）
+_IMPORT_RE = re.compile(
+    r"^\s*(import\s+\S.*|from\s+\S+\s+import\s+.*)$",
+    re.MULTILINE,
+)
+
+
+def _sanitize_code(code: str) -> str:
+    """移除所有 import 语句，避免沙盒 __import__ 报错。
+    pd、np、px（plotly.express）、go（plotly.graph_objects）均已在命名空间预加载。
+    """
+    return _IMPORT_RE.sub("", code).strip()
+
+
 def _extract_code(text: str) -> str:
     """从 AI 回复中提取 ```python ... ``` 代码块。"""
     match = _CODE_BLOCK_RE.search(text)
     return match.group(1).strip() if match else ""
 
 
+# 结果序列化最大大小（50KB），超出则截断
+_SERIALIZE_MAX_BYTES = 50 * 1024
+
+
 def _serialize(value: Any) -> Any:
-    """将 pandas/numpy 对象转为 JSON 可序列化的 Python 原生类型。"""
+    """将 pandas/numpy 对象转为 JSON 可序列化的 Python 原生类型（带大小保护）。"""
     if value is None:
         return None
     if isinstance(value, pd.DataFrame):
-        return value.to_dict(orient="records")
+        # 限制最多 500 行，防止超大结果
+        rows = min(len(value), 500)
+        result = value.head(rows).to_dict(orient="records")
+        return _truncate_if_large(result, len(value), "DataFrame")
     if isinstance(value, pd.Series):
-        return value.to_dict()
+        raw = value.to_dict()
+        result = {str(k): v for k, v in raw.items()}
+        return _truncate_if_large(result)
     if isinstance(value, (np.integer,)):
         return int(value)
     if isinstance(value, (np.floating,)):
         return float(value)
     if isinstance(value, np.ndarray):
-        return value.tolist()
+        result = value.tolist()
+        return _truncate_if_large(result)
+    if isinstance(value, (list, dict)):
+        return _truncate_if_large(value)
+    return value
+
+
+def _truncate_if_large(value: Any, total_rows: int = 0, source_type: str = "") -> Any:
+    """检查序列化结果大小，超过 50KB 时截断。"""
+    try:
+        serialized = json.dumps(value, ensure_ascii=False, default=str)
+        if len(serialized.encode("utf-8")) > _SERIALIZE_MAX_BYTES:
+            # 截断为前 200 项（列表）或前 50 个键（字典）
+            if isinstance(value, list):
+                truncated = value[:200]
+                note = {"_truncated": True, "_original_count": len(value), "_note": "结果已截断（前200条）"}
+                if total_rows:
+                    note["_original_rows"] = total_rows
+                return truncated + [note]
+            elif isinstance(value, dict):
+                keys = list(value.keys())[:50]
+                return {k: value[k] for k in keys}
+    except (TypeError, ValueError):
+        pass
     return value

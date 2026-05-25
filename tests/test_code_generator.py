@@ -160,3 +160,107 @@ class TestGenerate:
         result = cg.generate("问题", [], {}, sample_df)
         assert result["success"] is False
         assert "error" in result
+
+
+# ── _sanitize_code & print 捕获 ─────────────────────────────
+
+class TestSanitizeCode:
+    def test_import_pandas_stripped(self, sample_df):
+        """验证 import pandas as pd 被移除且执行成功。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        code = "import pandas as pd\nresult = df['TotalAmount'].sum()"
+        result = cg.execute_safe(code, sample_df)
+        assert result["success"] is True
+        assert abs(result["result"] - 101.5) < 0.01
+
+    def test_import_numpy_stripped(self, sample_df):
+        """验证 import numpy as np 被移除。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        code = "import numpy as np\nresult = np.sum(df['TotalAmount'].values)"
+        result = cg.execute_safe(code, sample_df)
+        assert result["success"] is True
+        assert abs(result["result"] - 101.5) < 0.01
+
+    def test_from_import_stripped(self, sample_df):
+        """验证 from pandas import DataFrame 被移除。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        code = "from pandas import DataFrame\nresult = len(df)"
+        result = cg.execute_safe(code, sample_df)
+        assert result["success"] is True
+        assert result["result"] == 5
+
+    def test_print_output_captured(self, sample_df):
+        """验证 print 输出进入 stdout 字段。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        code = "print('hello world')\nprint('foo bar')\nresult = 42"
+        result = cg.execute_safe(code, sample_df)
+        assert result["success"] is True
+        assert result["result"] == 42
+        assert result["stdout"] is not None
+        assert "hello world" in result["stdout"]
+        assert "foo bar" in result["stdout"]
+
+    def test_stdout_none_when_no_print(self, sample_df):
+        """验证无 print 时 stdout 为 None。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        code = "result = df['TotalAmount'].sum()"
+        result = cg.execute_safe(code, sample_df)
+        assert result["success"] is True
+        assert result["stdout"] is None
+
+
+# ── execute_safe 超时控制 ──────────────────────────────────
+
+class TestExecuteTimeout:
+    def test_execute_timeout(self, sample_df):
+        """验证超时代码返回 error。"""
+        from ai.code_generator import CodeGenerator
+        import config as _cfg
+        cg = CodeGenerator(MagicMock())
+        # 使用无限循环触发超时（CODE_EXEC_TIMEOUT 默认 30s，这里改为 1s）
+        old_timeout = getattr(_cfg, "CODE_EXEC_TIMEOUT", 30)
+        _cfg.CODE_EXEC_TIMEOUT = 1
+        try:
+            result = cg.execute_safe("while True: pass", sample_df)
+            assert result["success"] is False
+            assert "超时" in result.get("error", "")
+        finally:
+            _cfg.CODE_EXEC_TIMEOUT = old_timeout
+
+    def test_fast_code_completes(self, sample_df):
+        """验证正常快速代码不受超时控制影响。"""
+        from ai.code_generator import CodeGenerator
+        cg = CodeGenerator(MagicMock())
+        result = cg.execute_safe("result = 42", sample_df)
+        assert result["success"] is True
+        assert result["result"] == 42
+
+
+# ── 配置项验证 ────────────────────────────────────────────
+
+class TestConfig:
+    def test_max_tokens_config(self):
+        """验证 AI_MAX_TOKENS 配置项存在且为整数。"""
+        import config
+        assert hasattr(config, "AI_MAX_TOKENS")
+        assert isinstance(config.AI_MAX_TOKENS, int)
+        assert config.AI_MAX_TOKENS > 0
+
+    def test_request_timeout_config(self):
+        """验证 AI_REQUEST_TIMEOUT 配置项存在且为正数。"""
+        import config
+        assert hasattr(config, "AI_REQUEST_TIMEOUT")
+        assert isinstance(config.AI_REQUEST_TIMEOUT, (int, float))
+        assert config.AI_REQUEST_TIMEOUT > 0
+
+    def test_code_exec_timeout_config(self):
+        """验证 CODE_EXEC_TIMEOUT 配置项存在且为整数。"""
+        import config
+        assert hasattr(config, "CODE_EXEC_TIMEOUT")
+        assert isinstance(config.CODE_EXEC_TIMEOUT, int)
+        assert config.CODE_EXEC_TIMEOUT > 0

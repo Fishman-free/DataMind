@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -149,7 +151,7 @@ def _rebuild_state_from_file(save_path: str) -> dict:
     state["analyzer"]          = analyzer
     state["detector"]          = detector
     state["insights"]          = insights
-    state["chat_session"]      = ChatSession(summary)
+    state["chat_session"]      = ChatSession.restore_from_disk(summary)
 
     # 质量评分
     from data.quality_scorer import QualityScorer
@@ -341,12 +343,15 @@ def chart_generate():
 
     from ai.chart_generator import ChartGenerator
     cg = ChartGenerator(state.get("openai_client"))
-    result = cg.generate(
-        description,
-        state["df_clean"],
-        previous_chart=body.get("previous_chart"),
-    )
-    return jsonify(result)
+    try:
+        result = cg.generate(
+            description,
+            state["df_clean"],
+            previous_chart=body.get("previous_chart"),
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"success": False, "explanation": f"图表服务异常：{exc}"}), 500
 
 
 # ── 分析接口 ──────────────────────────────────────────────────
@@ -447,8 +452,9 @@ def chat():
                 model=config.AI_MODEL,
                 messages=messages,
                 temperature=0.2,
-                max_tokens=1000,
+                max_tokens=config.AI_MAX_TOKENS,
                 stream=True,
+                timeout=config.AI_REQUEST_TIMEOUT,
             )
             for chunk in stream:
                 try:
@@ -460,18 +466,47 @@ def chat():
                 except (AttributeError, IndexError):
                     continue
 
-            # 提取代码块并执行（先做安全检查）
+            # 提取代码块并在后台线程中执行，避免阻塞 SSE 流
             code = cg.extract_code(full_text)
             if code:
                 if not cg.validate_code(code):
                     yield {"type": "error", "message": "代码包含危险操作，已被拒绝执行"}
                 else:
                     yield {"type": "code_complete", "code": code}
-                    exec_result = cg.execute_safe(code, df)
-                    yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result")}
-                    chart_data = exec_result.get("chart")
-                    if chart_data:
-                        yield {"type": "chart", "data": chart_data}
+                    result_queue: queue.Queue = queue.Queue()
+
+                    def _run_code():
+                        try:
+                            exec_result = cg.execute_safe(code, df)
+                            result_queue.put(("ok", exec_result))
+                        except Exception as exc:
+                            result_queue.put(("err", str(exc)))
+
+                    t = threading.Thread(target=_run_code, daemon=True)
+                    t.start()
+
+                    # 轮询队列，每 1s 发送心跳，最长等待 60s
+                    elapsed = 0
+                    exec_result = None
+                    while elapsed < config.CODE_EXEC_TIMEOUT:
+                        try:
+                            status, data = result_queue.get(timeout=1.0)
+                            if status == "ok":
+                                exec_result = data
+                            else:
+                                yield {"type": "error", "message": f"代码执行异常：{data}"}
+                            break
+                        except queue.Empty:
+                            elapsed += 1
+                            yield {"type": "heartbeat"}
+
+                    if exec_result is None:
+                        yield {"type": "error", "message": f"代码执行超时（{config.CODE_EXEC_TIMEOUT}s）"}
+                    else:
+                        yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result"), "stdout": exec_result.get("stdout"), "error": exec_result.get("error")}
+                        chart_data = exec_result.get("chart")
+                        if chart_data:
+                            yield {"type": "chart", "data": chart_data}
 
             # 记录到 ChatSession
             if session:
