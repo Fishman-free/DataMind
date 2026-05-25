@@ -158,6 +158,21 @@ def _rebuild_state_from_file(save_path: str) -> dict:
     scorer = QualityScorer()
     state["quality_score"] = scorer.score(df_raw, df_clean, prep_report)
 
+    # 集成数据画像
+    try:
+        from data.profiler import DataProfiler
+        profile = DataProfiler(df_clean).detect()
+        df_summary = summary
+        df_summary["col_info"]            = profile["col_info"]
+        df_summary["profile_mode"]        = profile["mode"]
+        df_summary["profile_mode_name"]   = profile["display_name"]
+        df_summary["suggested_questions"] = profile["suggested_questions"]
+        df_summary["description"]         = profile["description"]
+        df_summary["target_col"]          = profile["target_col"]
+        state["profile"]                  = profile
+    except Exception:
+        pass  # 画像检测失败不影响核心功能
+
     return {"summary": summary, "prep_report": prep_report}
 
 
@@ -316,6 +331,197 @@ def insights():
     if err:
         return err
     return jsonify(_state()["insights"] or [])
+
+
+# ── 通用化分析接口 ─────────────────────────────────────────────
+
+@api_bp.route("/analysis/data_profile")
+def data_profile():
+    """返回数据画像（6种模式 + 列信息 + 建议问题 + 自描述）。"""
+    err = _require_data()
+    if err:
+        return err
+    state = _state()
+    profile = state.get("profile")
+    if profile is None:
+        from data.profiler import DataProfiler
+        profile = DataProfiler(state["df_clean"]).detect()
+        state["profile"] = profile
+    return jsonify(profile)
+
+
+@api_bp.route("/analysis/adaptive_charts")
+def adaptive_charts():
+    """
+    按数据画像返回 6 个自适应图表配置。
+    每个配置包含 type/title/data，由前端 Plotly 渲染。
+    """
+    err = _require_data()
+    if err:
+        return err
+    state     = _state()
+    df        = state["df_clean"]
+    az        = state["analyzer"]
+    profile   = state.get("profile") or {}
+    mode      = profile.get("mode", "mixed")
+    pp_report = state.get("preprocess_report", {})
+
+    charts: list[dict] = []
+
+    if mode == "retail":
+        _methods = ["sales_trend", "top_products", "country_distribution",
+                    "correlation_matrix", "time_pattern", "rfm_analysis"]
+        for m in _methods:
+            try:
+                data = getattr(az, m)()
+                charts.append({"method": m, "data": data, "source": "retail"})
+            except Exception as e:
+                charts.append({"method": m, "data": None, "error": str(e), "source": "retail"})
+        return jsonify(charts)
+
+    # 通用路径：按画像选择图表
+    numeric_cols     = profile.get("numeric_cols", [])
+    categorical_cols = profile.get("categorical_cols", [])
+    target_col       = profile.get("target_col")
+    date_col         = profile.get("date_col")
+
+    # 图表1：时序折线 or 数值分布
+    if mode == "temporal" and date_col:
+        try:
+            charts.append({
+                "type": "line", "title": f"{date_col} 时间趋势",
+                "data": az.sales_trend(), "source": "temporal"
+            })
+        except Exception:
+            charts.append(_make_hist_chart(az, numeric_cols))
+    else:
+        charts.append(_make_hist_chart(az, numeric_cols))
+
+    # 图表2：相关性矩阵
+    try:
+        charts.append({
+            "type": "heatmap", "title": "相关性矩阵",
+            "data": az.correlation_matrix(), "source": "generic"
+        })
+    except Exception:
+        charts.append({"type": "heatmap", "title": "相关性矩阵", "data": None})
+
+    # 图表3：箱线图
+    box_data = az.box_plots(max_cols=6)
+    charts.append({"type": "box", "title": "数值列分布箱线图",
+                   "data": box_data, "source": "generic"})
+
+    # 图表4：散点图 or 类别频次
+    if len(numeric_cols) >= 2:
+        scatter_data = az.scatter_top_pairs(n_pairs=1)
+        if scatter_data:
+            pair = scatter_data[0]
+            charts.append({
+                "type": "scatter",
+                "title": f"{pair['x_col']} vs {pair['y_col']}（相关系数 {pair['corr']:.2f}）",
+                "data": scatter_data, "source": "generic"
+            })
+        else:
+            charts.append(_make_cat_chart(az, categorical_cols))
+    else:
+        charts.append(_make_cat_chart(az, categorical_cols))
+
+    # 图表5：目标列分布 or 类别列
+    if target_col:
+        try:
+            vc = df[target_col].value_counts()
+            charts.append({
+                "type": "bar",
+                "title": f"{target_col} 分布",
+                "data": {"labels": [str(x) for x in vc.index.tolist()],
+                         "counts": [int(x) for x in vc.values.tolist()],
+                         "col": target_col},
+                "source": "generic"
+            })
+        except Exception:
+            charts.append(_make_cat_chart(az, categorical_cols))
+    elif categorical_cols:
+        charts.append(_make_cat_chart(az, categorical_cols))
+    else:
+        charts.append(_make_hist_chart(az, numeric_cols, offset=1))
+
+    # 图表6：预处理前后对比
+    viz = az.preprocess_visual(pp_report)
+    charts.append({"type": "bar_grouped", "title": "数据清洗前后对比",
+                   "data": viz["before_after"], "source": "preprocess"})
+
+    return jsonify(charts)
+
+
+def _make_hist_chart(az, numeric_cols: list, offset: int = 0) -> dict:
+    """构造直方图图表配置。"""
+    try:
+        data = az.numeric_distributions(max_cols=6)
+        if offset and len(data) > offset:
+            data = data[offset:]
+        return {"type": "histogram", "title": "数值列分布", "data": data, "source": "generic"}
+    except Exception:
+        return {"type": "histogram", "title": "数值列分布", "data": [], "source": "generic"}
+
+
+def _make_cat_chart(az, categorical_cols: list) -> dict:
+    """构造类别频次图表配置。"""
+    try:
+        data = az.category_distributions(max_cols=1)
+        col  = data[0]["col"] if data else "分类列"
+        return {"type": "bar", "title": f"{col} 频次分布",
+                "data": data[0] if data else {}, "source": "generic"}
+    except Exception:
+        return {"type": "bar", "title": "分类频次", "data": {}, "source": "generic"}
+
+
+@api_bp.route("/analysis/suggested_questions")
+def suggested_questions():
+    """返回 4 个基于真实数据的建议问题。"""
+    err = _require_data()
+    if err:
+        return err
+    state   = _state()
+    profile = state.get("profile") or {}
+    qs      = profile.get("suggested_questions", [
+        "这份数据有哪些主要特征？",
+        "哪些列有异常值？",
+        "数值列的分布情况如何？",
+        "列之间的相关性如何？",
+    ])
+    return jsonify(qs)
+
+
+@api_bp.route("/data/download-clean")
+def download_clean():
+    """下载清洗后的 DataFrame 为 CSV 文件。"""
+    err = _require_data()
+    if err:
+        return err
+    import io
+    state = _state()
+    df    = state["df_clean"]
+    buf   = io.StringIO()
+    df.to_csv(buf, index=False, encoding="utf-8-sig")
+    buf.seek(0)
+    from flask import Response
+    return Response(
+        buf.getvalue().encode("utf-8-sig"),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=cleaned_data.csv"},
+    )
+
+
+@api_bp.route("/analysis/preprocess_visual")
+def preprocess_visual_api():
+    """返回预处理可视化数据（前后对比 + 缺失值热力图）。"""
+    err = _require_data()
+    if err:
+        return err
+    state     = _state()
+    az        = state["analyzer"]
+    pp_report = state.get("preprocess_report", {})
+    return jsonify(az.preprocess_visual(pp_report))
 
 
 # ── 图表生成接口 ──────────────────────────────────────────────
