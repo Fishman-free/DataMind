@@ -16,6 +16,7 @@ REST API 路由蓝图 — DataMind 后端接口。
   POST /api/chat/reset                重置对话
   POST /api/report/generate           生成 Markdown 分析报告
   POST /api/report/story              生成数据叙事故事
+  POST /api/plan/generate            生成智能分析计划清单
 
 来源：学生+AI
 """
@@ -789,3 +790,26 @@ def report_story():
 
     story = st.tell(summary, insights, history, report_content)
     return jsonify(story)
+
+
+# ── 分析计划接口 ──────────────────────────────────────────────
+
+@api_bp.route("/plan/generate", methods=["POST"])
+def plan_generate():
+    """
+    生成智能分析计划。
+
+    响应：[{"id": int, "title": str, "category": str, "description": str}, ...]
+    """
+    err = _require_data()
+    if err:
+        return err
+
+    state = _state()
+    from ai.plan_generator import PlanGenerator
+
+    pg = PlanGenerator(state.get("openai_client"))
+    summary = state["analyzer"].summary_stats()
+    insights = state["insights"] or []
+    plan = pg.generate(summary, insights)
+    return jsonify(plan)
