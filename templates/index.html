@@ -29,20 +29,20 @@
     </div>
     <div class="metric-card" style="--accent-line: linear-gradient(90deg,#00D4FF,#0EA5E9)">
         <div class="metric-icon" style="background:rgba(0,212,255,.12);color:#00D4FF">
-            <i class="bi bi-calendar-range"></i>
+            <i id="stat-col3-icon" class="bi bi-calendar-range"></i>
         </div>
         <div>
-            <div class="metric-value" id="stat-daterange" style="font-size:1rem">—</div>
-            <div class="metric-label">时间跨度</div>
+            <div class="metric-value" id="stat-col3" style="font-size:1rem">—</div>
+            <div class="metric-label" id="stat-col3-label">时间跨度</div>
         </div>
     </div>
     <div class="metric-card" style="--accent-line: linear-gradient(90deg,#FFB347,#FF8C00)">
         <div class="metric-icon" style="background:rgba(255,179,71,.13);color:#FFB347">
-            <i class="bi bi-currency-dollar"></i>
+            <i id="stat-col4-icon" class="bi bi-currency-dollar"></i>
         </div>
         <div>
-            <div class="metric-value" id="stat-revenue" style="font-size:1.4rem">—</div>
-            <div class="metric-label">总销售额</div>
+            <div class="metric-value" id="stat-col4" style="font-size:1.4rem">—</div>
+            <div class="metric-label" id="stat-col4-label">总销售额</div>
         </div>
     </div>
 </div>
@@ -77,14 +77,48 @@
     <div id="quality-suggestions" class="quality-suggestions mt-3"></div>
 </div>
 
+<!-- 数据自描述卡片 -->
+<div id="data-description-card" class="card mb-4" style="display:none">
+    <div class="card-header d-flex align-items-center gap-2">
+        <span id="profile-icon" style="font-size:1.1em">◈</span>
+        <span id="profile-display-name" style="color:var(--cyan)">数据集类型检测中…</span>
+    </div>
+    <div class="card-body">
+        <p id="data-description-text" class="mb-2" style="color:rgba(255,255,255,0.8);line-height:1.7"></p>
+    </div>
+</div>
+
 <!-- 预处理摘要 -->
 <div id="preprocess-section" class="card mb-4" style="display:none">
-    <div class="card-header d-flex align-items-center gap-2">
-        <i class="bi bi-gear" style="color:var(--cyan)"></i>
-        预处理摘要
+    <div class="card-header d-flex align-items-center justify-content-between">
+        <span class="d-flex align-items-center gap-2">
+            <i class="bi bi-gear" style="color:var(--cyan)"></i>
+            预处理摘要
+        </span>
+        <button id="download-clean-btn" class="btn btn-outline-secondary btn-sm"
+                onclick="downloadCleanData()" title="下载清洗后的数据">
+            <i class="bi bi-download me-1"></i>下载清洗数据 CSV
+        </button>
     </div>
     <div class="card-body p-0">
         <div class="prep-timeline px-4 py-2" id="prep-timeline"></div>
+        <!-- 预处理可视化 -->
+        <div id="preprocess-viz" class="px-4 pb-3" style="display:none">
+            <div class="row g-3 mt-1">
+                <div class="col-12 col-md-6">
+                    <div style="font-size:0.8em;color:var(--blue);margin-bottom:4px">
+                        <i class="bi bi-bar-chart-steps me-1"></i>清洗前后数据量对比
+                    </div>
+                    <div id="chart-preprocess-ba" style="height:160px"></div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div style="font-size:0.8em;color:var(--cyan);margin-bottom:4px">
+                        <i class="bi bi-table me-1"></i>各列缺失率
+                    </div>
+                    <div id="chart-missing-heatmap" style="height:160px"></div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -237,6 +271,10 @@ window.initOverviewPage = async function () {
 
         // 加载数据质量评分卡
         if (typeof fetchQualityScore === 'function') fetchQualityScore();
+
+        // 加载数据自描述与预处理可视化
+        loadDataProfile();
+        loadPreprocessViz();
     } catch (e) {
         console.error("概览页加载失败:", e);
     }
@@ -258,13 +296,15 @@ function renderMetrics(s) {
     animateNum(document.getElementById("stat-cols"), s.column_count || 0);
 
     const dr = s.date_range || {};
-    document.getElementById("stat-daterange").textContent =
+    const col3El = document.getElementById("stat-col3");
+    if (col3El) col3El.textContent =
         dr.start ? `${dr.start.slice(0,10)} ~ ${(dr.end||"").slice(0,10)}` : "—";
 
     const ns = s.numeric_stats || {};
     const amtKey = Object.keys(ns).find(k => /amount|total|revenue/i.test(k));
     if (amtKey && ns[amtKey].sum != null) {
-        animateNum(document.getElementById("stat-revenue"), Number(ns[amtKey].sum), 0);
+        const col4El = document.getElementById("stat-col4");
+        if (col4El) animateNum(col4El, Number(ns[amtKey].sum), 0);
     }
 }
 
@@ -311,6 +351,120 @@ function renderPreviewTable(rows) {
         `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`
     ).join("");
     document.getElementById("preview-badge").textContent = `${rows.length} 行`;
+}
+
+// ── 数据自描述 ─────────────────────────────────────────────
+async function loadDataProfile() {
+    try {
+        const r = await fetch('/api/analysis/data_profile');
+        if (!r.ok) return;
+        const p = await r.json();
+
+        // 数据自描述卡片
+        const card = document.getElementById('data-description-card');
+        if (card) {
+            document.getElementById('profile-icon').textContent = p.icon || '◈';
+            document.getElementById('profile-display-name').textContent =
+                (p.display_name || '混合型') + '数据集';
+            document.getElementById('data-description-text').textContent =
+                p.description || '';
+            card.style.display = '';
+        }
+
+        // 自适应统计卡（第3、4卡）
+        _updateAdaptiveStatCards(p);
+
+    } catch(e) { /* 静默失败 */ }
+}
+
+function _updateAdaptiveStatCards(profile) {
+    const mode = profile.mode || 'mixed';
+    const col3Label = document.getElementById('stat-col3-label');
+    const col3Val   = document.getElementById('stat-col3');
+    const col3Icon  = document.getElementById('stat-col3-icon');
+    const col4Label = document.getElementById('stat-col4-label');
+    const col4Val   = document.getElementById('stat-col4');
+    const col4Icon  = document.getElementById('stat-col4-icon');
+    if (!col3Label) return;
+
+    if (mode === 'numeric' || mode === 'categorical') {
+        col3Label.textContent = '数值列数';
+        col3Icon.className    = 'bi bi-123';
+        col3Val.textContent   = (profile.numeric_cols || []).length || '—';
+
+        const targetCol = profile.target_col;
+        col4Label.textContent = targetCol ? `${targetCol} 均值` : '类别列数';
+        col4Icon.className    = targetCol ? 'bi bi-bullseye' : 'bi bi-tags';
+        col4Val.textContent   = '—';  // 实际值从 summary 获取
+    } else if (mode === 'geographic') {
+        col3Label.textContent = '数值列数';
+        col3Icon.className    = 'bi bi-123';
+        col3Val.textContent   = (profile.numeric_cols || []).length || '—';
+        col4Label.textContent = '地理列';
+        col4Icon.className    = 'bi bi-geo-alt';
+        col4Val.textContent   = profile.geo_col || '—';
+    }
+    // retail / temporal 保持原样（时间跨度 + 总销售额）
+}
+
+// ── 预处理可视化 ───────────────────────────────────────────
+async function loadPreprocessViz() {
+    if (typeof Plotly === 'undefined') return;
+    try {
+        const r = await fetch('/api/analysis/preprocess_visual');
+        if (!r.ok) return;
+        const viz = await r.json();
+
+        // 清洗前后对比图
+        const baData = viz.before_after || [];
+        if (baData.length > 0) {
+            const steps   = baData.map(d => d.step);
+            const removed = baData.map(d => d.removed || 0);
+            Plotly.newPlot('chart-preprocess-ba', [{
+                type: 'bar', x: steps, y: removed,
+                marker: { color: ['rgba(79,159,255,0.8)', 'rgba(0,212,255,0.8)'] },
+                text: removed.map(v => v > 0 ? v + ' 行' : '无变化'),
+                textposition: 'auto',
+            }], {
+                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                font: { color: '#fff', size: 11 },
+                margin: { t: 10, b: 30, l: 40, r: 10 },
+                yaxis: { gridcolor: 'rgba(255,255,255,0.08)' },
+                showlegend: false,
+            }, { responsive: true, displayModeBar: false });
+        }
+
+        // 缺失率热力图（横向条形图）
+        const missing = (viz.missing_heatmap || []).filter(d => d.missing_count > 0);
+        if (missing.length > 0) {
+            const cols = missing.map(d => d.col);
+            const pcts = missing.map(d => d.missing_pct);
+            Plotly.newPlot('chart-missing-heatmap', [{
+                type: 'bar', orientation: 'h',
+                x: pcts, y: cols,
+                marker: { color: pcts.map(p => p > 10 ? 'rgba(255,76,76,0.8)' : 'rgba(79,255,140,0.8)') },
+                text: pcts.map(p => p.toFixed(1) + '%'),
+                textposition: 'auto',
+            }], {
+                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                font: { color: '#fff', size: 10 },
+                margin: { t: 10, b: 20, l: 100, r: 30 },
+                xaxis: { title: '缺失率 (%)', gridcolor: 'rgba(255,255,255,0.08)' },
+            }, { responsive: true, displayModeBar: false });
+        } else {
+            // 无缺失值 → 显示绿色提示
+            document.getElementById('chart-missing-heatmap').innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--green)">' +
+                '<i class="bi bi-check-circle me-2"></i>所有列均无缺失值</div>';
+        }
+
+        document.getElementById('preprocess-viz').style.display = '';
+    } catch(e) { /* 静默失败 */ }
+}
+
+// ── 下载清洗后数据 ─────────────────────────────────────────
+function downloadCleanData() {
+    window.location.href = '/api/data/download-clean';
 }
 
 window.initOverviewPage();
