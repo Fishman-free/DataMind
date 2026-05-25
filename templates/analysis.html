@@ -15,10 +15,11 @@
             <!-- 快捷提问 -->
             <div id="quick-questions" class="d-flex flex-wrap gap-2 mb-3">
                 <span class="quick-q-label">快捷提问：</span>
-                <button class="quick-q-btn" onclick="quickAsk('月均销售额是多少？')">月均销售额</button>
-                <button class="quick-q-btn" onclick="quickAsk('Top 10 畅销商品有哪些？')">Top 10 商品</button>
-                <button class="quick-q-btn" onclick="quickAsk('各国家销售额占比如何？')">国家分布</button>
-                <button class="quick-q-btn" onclick="quickAsk('画一个月度销售趋势折线图')">趋势图</button>
+                <!-- 由 loadSuggestedQuestions() 动态注入 -->
+                <button class="quick-q-btn" onclick="quickAsk('这份数据有哪些主要特征？')">数据特征</button>
+                <button class="quick-q-btn" onclick="quickAsk('哪些列有异常值？')">异常值</button>
+                <button class="quick-q-btn" onclick="quickAsk('数值列的分布情况如何？')">分布情况</button>
+                <button class="quick-q-btn" onclick="quickAsk('列之间的相关性如何？')">相关性</button>
             </div>
 
             <!-- 对话历史区 -->
@@ -139,10 +140,39 @@ function quickAsk(q) {
 </script>
 
 <script>
-    // 在 DOMContentLoaded 中初始化图表工作台
+    // 在 DOMContentLoaded 中初始化图表工作台，并动态加载快捷提问
     document.addEventListener('DOMContentLoaded', function () {
         initChartWorkspace();
+        if (typeof loadSuggestedQuestions === 'function') loadSuggestedQuestions();
     });
+</script>
+
+<script>
+// 页面加载时动态替换快捷提问按钮
+async function loadSuggestedQuestions() {
+    try {
+        const r = await fetch('/api/analysis/suggested_questions');
+        if (!r.ok) return;
+        const qs = await r.json();
+        if (!Array.isArray(qs) || qs.length === 0) return;
+
+        var container = document.getElementById('quick-questions');
+        if (!container) return;
+
+        var label = container.querySelector('.quick-q-label');
+        container.innerHTML = '';
+        if (label) container.appendChild(label);
+
+        qs.forEach(function(q) {
+            var btn = document.createElement('button');
+            btn.className = 'quick-q-btn';
+            btn.textContent = q.length > 12 ? q.slice(0, 12) + '…' : q;
+            btn.title = q;
+            btn.onclick = function() { quickAsk(q); };
+            container.appendChild(btn);
+        });
+    } catch(e) { /* 保留默认按钮 */ }
+}
 </script>
 
 {% endblock %}
