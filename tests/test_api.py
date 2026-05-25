@@ -380,6 +380,94 @@ class TestReportStream:
 
             assert "data: [DONE]" in body, "SSE 流应以 [DONE] 结束"
 
+    def test_report_stream_agent_error_graceful_fallback(self, app, loaded_state):
+        """单个 agent 失败时流仍应完成，产出所有 4 个 section + report_done。"""
+        from unittest.mock import patch
+
+        def mock_stats_generate_fail(_self, info):
+            raise RuntimeError("模拟 AI 超时")
+
+        with patch("ai.report_agents.StatisticsAgent.generate", mock_stats_generate_fail), \
+             patch("ai.report_agents.InsightAgent.generate") as mock_i, \
+             patch("ai.report_agents.QAAgent.generate") as mock_q, \
+             patch("ai.report_agents.SynthesisAgent.generate") as mock_y:
+            mock_i.return_value = "## 关键洞察\n模拟洞察"
+            mock_q.return_value = "## 对话摘要\n模拟对话"
+            mock_y.return_value = "## 总结建议\n模拟建议"
+
+            client = app.test_client()
+            resp = client.post("/api/report/generate",
+                data='{"mode": "detailed", "stream": "true"}',
+                content_type="application/json")
+            assert resp.status_code == 200
+            assert resp.mimetype == "text/event-stream"
+
+            body = b"".join(resp.response).decode("utf-8")
+            events = []
+            for line in body.split("\n"):
+                if line.startswith("data: ") and "[DONE]" not in line:
+                    events.append(json.loads(line[6:]))
+
+            # 仍应有 report_start 和 report_done
+            event_types = {e.get("type") for e in events}
+            assert "report_start" in event_types
+            assert "report_done" in event_types
+
+            # 应有 agent_error 事件
+            assert "agent_error" in event_types, (
+                f"应该有 agent_error 事件，实际事件类型: {event_types}"
+            )
+
+            # 仍应有全部 4 个 agent 的 section（失败的 agent 有降级内容）
+            section_agents = {
+                e.get("agent") for e in events
+                if e.get("type") == "section"
+            }
+            assert section_agents == {"statistics", "insight", "qa", "synthesis"}, (
+                f"期待 4 个 section agent，实际: {section_agents}"
+            )
+
+            # 验证降级内容存在
+            stats_section = next(
+                (e for e in events if e.get("agent") == "statistics" and e.get("type") == "section"),
+                None
+            )
+            assert stats_section is not None, "应有 statistics 的 section 事件"
+            assert "生成失败" in stats_section["content"], (
+                f"降级内容应包含'生成失败'，实际: {stats_section['content'][:100]}"
+            )
+
+            assert "data: [DONE]" in body, "SSE 流应以 [DONE] 结束"
+
+    def test_report_keep_sync_when_stream_false(self, app, loaded_state):
+        """stream=false 时即使 mode=detailed 也返回 JSON 而非 SSE。"""
+        from unittest.mock import patch
+
+        with patch("ai.report_agents.StatisticsAgent.generate") as mock_s, \
+             patch("ai.report_agents.InsightAgent.generate") as mock_i, \
+             patch("ai.report_agents.QAAgent.generate") as mock_q, \
+             patch("ai.report_agents.SynthesisAgent.generate") as mock_y:
+            mock_s.return_value = "## 数据特征"
+            mock_i.return_value = "## 关键洞察"
+            mock_q.return_value = "## 对话摘要"
+            mock_y.return_value = "## 总结建议"
+
+            client = app.test_client()
+            resp = client.post("/api/report/generate",
+                data='{"mode": "detailed", "stream": "false"}',
+                content_type="application/json")
+
+            assert resp.status_code == 200
+            assert resp.mimetype == "application/json", (
+                f"期待 JSON 响应，实际 mimetype: {resp.mimetype}"
+            )
+
+            data = resp.get_json()
+            assert "content" in data
+            assert "title" in data
+            assert "html" in data
+            assert data.get("mode") == "detailed"
+
 
 # ── SSE 流式响应 ─────────────────────────────────────────────
 

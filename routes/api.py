@@ -655,26 +655,42 @@ def report_generate():
 
         # Agent 1: Statistics
         yield {"type": "agent_progress", "agent": "statistics", "status": "running"}
-        stats_agent = StatisticsAgent(client, model)
-        stats_section = stats_agent.generate(enriched_info)
+        try:
+            stats_agent = StatisticsAgent(client, model)
+            stats_section = stats_agent.generate(enriched_info)
+        except Exception as e:
+            yield {"type": "agent_error", "agent": "statistics", "message": str(e)}
+            stats_section = f"## 数据特征统计\n\n数据特征统计生成失败：{e}"
         yield {"type": "section", "agent": "statistics", "content": stats_section}
 
         # Agent 2: Insight
         yield {"type": "agent_progress", "agent": "insight", "status": "running"}
-        insight_agent = InsightAgent(client, model)
-        insight_section = insight_agent.generate(insights)
+        try:
+            insight_agent = InsightAgent(client, model)
+            insight_section = insight_agent.generate(insights)
+        except Exception as e:
+            yield {"type": "agent_error", "agent": "insight", "message": str(e)}
+            insight_section = f"## 关键洞察\n\n关键洞察生成失败：{e}"
         yield {"type": "section", "agent": "insight", "content": insight_section}
 
         # Agent 3: QA
         yield {"type": "agent_progress", "agent": "qa", "status": "running"}
-        qa_agent = QAAgent(client, model)
-        qa_section = qa_agent.generate(history)
+        try:
+            qa_agent = QAAgent(client, model)
+            qa_section = qa_agent.generate(history)
+        except Exception as e:
+            yield {"type": "agent_error", "agent": "qa", "message": str(e)}
+            qa_section = f"## 对话问答摘要\n\n对话问答摘要生成失败：{e}"
         yield {"type": "section", "agent": "qa", "content": qa_section}
 
         # Agent 4: Synthesis
         yield {"type": "agent_progress", "agent": "synthesis", "status": "running"}
-        synthesis_agent = SynthesisAgent(client, model)
-        synthesis_section = synthesis_agent.generate(stats_section, insight_section, qa_section, enriched_info)
+        try:
+            synthesis_agent = SynthesisAgent(client, model)
+            synthesis_section = synthesis_agent.generate(stats_section, insight_section, qa_section, enriched_info)
+        except Exception as e:
+            yield {"type": "agent_error", "agent": "synthesis", "message": str(e)}
+            synthesis_section = f"## 总结与建议\n\n总结与建议生成失败：{e}"
         yield {"type": "section", "agent": "synthesis", "content": synthesis_section}
 
         yield {"type": "report_done"}
