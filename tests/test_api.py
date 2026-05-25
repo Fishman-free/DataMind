@@ -244,3 +244,40 @@ class TestReport:
         data = resp.get_json()
         assert "content" in data
         assert len(data["content"]) > 0
+
+
+# ── SSE 流式响应 ─────────────────────────────────────────────
+
+class TestSSEStream:
+    """SSE 流式响应格式验证。"""
+
+    def test_sse_stream_yields_valid_format(self, app, loaded_state):
+        """SSE 流每行以 'data: ' 开头，以 [DONE] 结束。"""
+        client = app.test_client()
+
+        def dummy_gen():
+            yield {"type": "test", "content": "hello"}
+            yield {"type": "done"}
+
+        from routes.api import _sse_stream
+        with app.test_request_context():
+            resp = _sse_stream(dummy_gen)
+            assert resp.mimetype == "text/event-stream"
+            assert resp.headers["Cache-Control"] == "no-cache"
+
+    def test_sse_stream_error_handling(self, app, loaded_state):
+        """生成器抛出异常时 SSE 流仍返回 error 事件。"""
+        def bad_gen():
+            yield {"type": "start"}
+            raise RuntimeError("模拟错误")
+
+        from routes.api import _sse_stream
+        with app.test_request_context():
+            resp = _sse_stream(bad_gen)
+            body_iter = resp.response
+            chunks = []
+            for chunk in body_iter:
+                decoded = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+                chunks.append(decoded)
+            full = "".join(chunks)
+            assert '"type": "error"' in full

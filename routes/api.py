@@ -25,7 +25,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 import config
 from data.loader import UnsupportedFormatError, load_file
@@ -36,6 +36,35 @@ from ai.chat import ChatSession
 from ai.insight import InsightEngine
 
 api_bp = Blueprint("api", __name__)
+
+
+# ── SSE 流式响应通用包装器 ────────────────────────────────────
+
+def _sse_stream(generator_func, *args, **kwargs):
+    """
+    通用 SSE 流式响应包装器。
+    generator_func 是一个生成器，逐条 yield dict，
+    包装为 SSE 格式（data: {...}\n\n）输出。
+
+    用法：
+      return _sse_stream(my_generator, arg1, arg2)
+    """
+    def _generate():
+        try:
+            for chunk in generator_func(*args, **kwargs):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 # ── 持久化文件路径 ─────────────────────────────────────────────
 _LAST_UPLOAD_FILE = os.path.join(config.UPLOAD_FOLDER, ".last_upload.json")
