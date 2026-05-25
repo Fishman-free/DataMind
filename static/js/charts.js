@@ -39,26 +39,45 @@ function _layout(extra) {
 
 // ── 页面入口 ──────────────────────────────────────────────────
 window.initVisualizationPage = async function () {
-    const res = await fetch("/api/data/summary");
-    if (!res.ok) return;
+    var noDataAlert   = document.getElementById('no-data-alert');
+    var chartsSection = document.getElementById('charts-section');
+    if (!noDataAlert || !chartsSection) return;
 
-    document.getElementById("no-data-alert").style.display   = "none";
-    const section = document.getElementById("charts-section");
-    section.style.display = "block";
-    section.style.opacity = "0";
-    requestAnimationFrame(() => {
-        section.style.transition = "opacity .5s ease";
-        section.style.opacity = "1";
-    });
+    // 检查是否有数据
+    try {
+        const ping = await fetch('/api/data/summary');
+        if (!ping.ok) {
+            noDataAlert.style.display = '';
+            chartsSection.style.display = 'none';
+            return;
+        }
+    } catch(e) {
+        noDataAlert.style.display = '';
+        chartsSection.style.display = 'none';
+        return;
+    }
 
-    await Promise.all([
-        loadSalesTrend(),
-        loadTopProducts(),
-        loadCountryDistribution(),
-        loadCorrelationMatrix(),
-        loadTimePattern(),
-        loadRFMAnalysis(),
-    ]);
+    noDataAlert.style.display = 'none';
+    chartsSection.style.display = '';
+
+    // 获取数据画像
+    let profile = {};
+    try {
+        const r = await fetch('/api/analysis/data_profile');
+        if (r.ok) profile = await r.json();
+    } catch(e) {}
+
+    // 更新画像徽章
+    _updateProfileBadge(profile);
+
+    // 零售模式：保持原有渲染逻辑
+    if (profile.mode === 'retail') {
+        _renderRetailDashboard();
+        return;
+    }
+
+    // 通用模式：自适应渲染
+    await _renderAdaptiveDashboard(profile);
 };
 
 // ── 1. 月度销售趋势 ───────────────────────────────────────────
@@ -317,4 +336,215 @@ function _showEmpty(el) {
         <div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:13px">
             <i class="bi bi-bar-chart me-2"></i>暂无数据
         </div>`;
+}
+
+// ── 自适应仪表盘核心函数 ───────────────────────────────────
+
+function _updateProfileBadge(profile) {
+    var badge     = document.getElementById('profile-badge');
+    var badgeIcon = document.getElementById('profile-badge-icon');
+    var badgeName = document.getElementById('profile-badge-name');
+    if (!badge) return;
+    const modeColors = {
+        retail:      '#FFB347',
+        temporal:    'var(--blue)',
+        numeric:     'var(--cyan)',
+        categorical: 'var(--purple)',
+        geographic:  'var(--green)',
+        mixed:       'rgba(255,255,255,0.6)',
+    };
+    const color = modeColors[profile.mode] || 'var(--blue)';
+    badge.style.color         = color;
+    badge.style.borderColor   = color;
+    badge.style.display       = '';
+    if (badgeIcon) badgeIcon.textContent = profile.icon || '◈';
+    if (badgeName) badgeName.textContent = profile.display_name || '混合型';
+}
+
+async function _renderAdaptiveDashboard(profile) {
+    var grid = document.getElementById('adaptive-charts-grid');
+    if (!grid) return;
+
+    // 显示加载骨架
+    grid.innerHTML = Array(6).fill(0).map(function(_, i) {
+        return '<div class="col-12 col-xl-6">' +
+            '<div class="card chart-card">' +
+            '<div class="card-header" style="color:rgba(255,255,255,0.4)">' +
+            '<i class="bi bi-hourglass-split me-2"></i>加载中…</div>' +
+            '<div class="card-body p-1">' +
+            '<div id="chart-slot-' + i + '" style="height:290px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.2)">' +
+            '<i class="bi bi-bar-chart" style="font-size:2rem"></i>' +
+            '</div></div></div></div>';
+    }).join('');
+
+    // 获取自适应图表数据
+    var charts = [];
+    try {
+        const r = await fetch('/api/analysis/adaptive_charts');
+        if (r.ok) charts = await r.json();
+    } catch(e) {
+        grid.innerHTML = '<div class="col-12"><div class="alert alert-warning">图表加载失败，请刷新重试。</div></div>';
+        return;
+    }
+
+    // 渲染每个图表 slot
+    charts.forEach(function(cfg, i) {
+        _updateSlotHeader(i, cfg.title || '图表');
+        _renderChartSlot(i, cfg);
+    });
+}
+
+function _updateSlotHeader(index, title) {
+    var slot = document.getElementById('chart-slot-' + index);
+    if (!slot) return;
+    var card = slot.closest ? slot.closest('.card') : null;
+    var header = card ? card.querySelector('.card-header') : null;
+    if (header) header.innerHTML = '<i class="bi bi-graph-up me-2" style="color:var(--cyan)"></i>' + title;
+}
+
+function _renderChartSlot(index, cfg) {
+    var container = document.getElementById('chart-slot-' + index);
+    if (!container || !window.Plotly) return;
+
+    if (!cfg || !cfg.data) {
+        container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(255,255,255,0.3);font-size:0.85em"><i class="bi bi-dash-circle me-2"></i>当前数据集无此维度</div>';
+        return;
+    }
+
+    const layout_base = {
+        paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+        font: { color: '#fff', size: 11 },
+        margin: { t: 20, b: 40, l: 50, r: 20 },
+        yaxis: { gridcolor: 'rgba(255,255,255,0.07)' },
+        xaxis: { gridcolor: 'rgba(255,255,255,0.07)' },
+        showlegend: false,
+    };
+    const opts = { responsive: true, displayModeBar: false };
+
+    try {
+        switch (cfg.type) {
+            case 'histogram':
+                _plotHistogram(container, cfg.data, layout_base, opts); break;
+            case 'heatmap':
+                _plotHeatmap(container, cfg.data, layout_base, opts); break;
+            case 'scatter':
+                _plotScatter(container, cfg.data, layout_base, opts); break;
+            case 'bar':
+                _plotBar(container, cfg.data, layout_base, opts); break;
+            case 'bar_grouped':
+                _plotBarGrouped(container, cfg.data, layout_base, opts); break;
+            case 'box':
+                _plotBox(container, cfg.data, layout_base, opts); break;
+            case 'line':
+                _plotLine(container, cfg.data, layout_base, opts); break;
+            default:
+                // 原有零售图表：data/layout 格式
+                if (cfg.data && cfg.data.data) {
+                    Plotly.react(container, cfg.data.data, Object.assign({}, layout_base, cfg.data.layout || {}), opts);
+                }
+        }
+    } catch(e) {
+        console.error('图表渲染失败 slot', index, e);
+        container.innerHTML = '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.3);font-size:0.82em">图表渲染失败</div>';
+    }
+}
+
+function _plotHistogram(el, data, layout, opts) {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const traces = data.map(function(d) {
+        return {
+            type: 'bar', name: d.col,
+            x: d.bins ? d.bins.slice(0, -1).map(function(v, i) { return ((v + d.bins[i+1]) / 2).toFixed(2); }) : [],
+            y: d.counts || [],
+            opacity: 0.8,
+        };
+    });
+    Plotly.react(el, traces, Object.assign({}, layout, { barmode: 'overlay' }), opts);
+}
+
+function _plotHeatmap(el, data, layout, opts) {
+    if (!data || !data.columns) return;
+    Plotly.react(el, [{
+        type: 'heatmap', z: data.matrix, x: data.columns, y: data.columns,
+        colorscale: [[0,'#1e3a5f'],[0.5,'#4F9FFF'],[1,'#00D4FF']],
+        text: (data.matrix || []).map(function(row) { return row.map(function(v) { return (v || 0).toFixed(2); }); }),
+        texttemplate: '%{text}', showscale: false,
+    }], layout, opts);
+}
+
+function _plotScatter(el, data, layout, opts) {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const d = data[0];
+    Plotly.react(el, [{
+        type: 'scatter', mode: 'markers',
+        x: d.x, y: d.y, name: d.x_col + ' vs ' + d.y_col,
+        marker: { color: 'rgba(79,159,255,0.6)', size: 5 },
+    }], Object.assign({}, layout, {
+        xaxis: Object.assign({}, layout.xaxis, { title: d.x_col }),
+        yaxis: Object.assign({}, layout.yaxis, { title: d.y_col })
+    }), opts);
+}
+
+function _plotBar(el, data, layout, opts) {
+    if (!data || !data.labels) return;
+    Plotly.react(el, [{
+        type: 'bar', x: data.labels, y: data.counts,
+        marker: { color: 'rgba(0,212,255,0.75)' },
+    }], layout, opts);
+}
+
+function _plotBarGrouped(el, data, layout, opts) {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const steps   = data.map(function(d) { return d.step; });
+    const removed = data.map(function(d) { return d.removed || 0; });
+    Plotly.react(el, [{
+        type: 'bar', x: steps, y: removed,
+        marker: { color: removed.map(function(v) { return v > 0 ? 'rgba(255,120,80,0.8)' : 'rgba(0,212,100,0.8)'; }) },
+        text: removed.map(function(v) { return v > 0 ? v + ' 行' : '无变化'; }),
+        textposition: 'auto',
+    }], layout, opts);
+}
+
+function _plotBox(el, data, layout, opts) {
+    if (!Array.isArray(data) || data.length === 0) return;
+    const traces = data.map(function(d) {
+        return {
+            type: 'box', name: d.col,
+            q1: [d.q1], median: [d.median], q3: [d.q3],
+            lowerfence: [d.lower], upperfence: [d.upper],
+            mean: [d.median],
+            fillcolor: 'rgba(79,159,255,0.3)',
+            line: { color: 'var(--blue)' },
+        };
+    });
+    Plotly.react(el, traces, layout, opts);
+}
+
+function _plotLine(el, data, layout, opts) {
+    if (!data) return;
+    if (data.data && data.layout) {
+        Plotly.react(el, data.data, Object.assign({}, layout, data.layout || {}), opts);
+    }
+}
+
+// 零售模式：重建原有 6 个静态图表
+function _renderRetailDashboard() {
+    var grid = document.getElementById('adaptive-charts-grid');
+    if (!grid) return;
+    grid.innerHTML =
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-graph-up-arrow me-2" style="color:var(--blue)"></i>月度销售趋势</div><div class="card-body p-1"><div id="chart-sales-trend" style="height:290px"></div></div></div></div>' +
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-trophy me-2" style="color:var(--amber)"></i>Top 10 畅销商品</div><div class="card-body p-1"><div id="chart-top-products" style="height:290px"></div></div></div></div>' +
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-globe me-2" style="color:var(--cyan)"></i>国家销售分布</div><div class="card-body p-1"><div id="chart-country" style="height:290px"></div></div></div></div>' +
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-grid-3x3 me-2" style="color:var(--purple)"></i>相关性矩阵</div><div class="card-body p-1"><div id="chart-correlation" style="height:290px"></div></div></div></div>' +
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-clock me-2" style="color:var(--green)"></i>订单时间规律</div><div class="card-body p-1"><div id="chart-time-pattern" style="height:290px"></div></div></div></div>' +
+        '<div class="col-12 col-xl-6"><div class="card chart-card"><div class="card-header"><i class="bi bi-people me-2" style="color:var(--red)"></i>RFM 客户分布</div><div class="card-body p-1"><div id="chart-rfm" style="height:290px"></div></div></div></div>';
+    // 触发原有零售图表渲染
+    Promise.all([
+        loadSalesTrend(),
+        loadTopProducts(),
+        loadCountryDistribution(),
+        loadCorrelationMatrix(),
+        loadTimePattern(),
+        loadRFMAnalysis(),
+    ]);
 }
