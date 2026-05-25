@@ -10,6 +10,7 @@
   --bg-1: #07070f;
   --bg-2: #0a0a14;
   --bg-3: #0f0f1c;
+  --card-bg: rgba(15,15,28,0.70);
 
   /* Borders */
   --border:      rgba(255,255,255,0.08);
@@ -2146,3 +2147,103 @@ main.flex-grow-1 > * {
   transition: text-shadow 0.3s ease;
 }
 .stat-value { transition: text-shadow 0.3s ease; }
+
+/* ═══ 分析页双栏布局 ═══ */
+.analysis-layout {
+    display: flex;
+    gap: 24px;
+    height: calc(100vh - 140px);
+}
+.analysis-left {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.analysis-right {
+    width: 420px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ═══ 图表工作台 ═══ */
+.chart-workspace {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+.chart-ws-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--blue);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.chart-ws-body {
+    flex: 1;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+}
+.chart-input-row {
+    display: flex;
+    gap: 8px;
+}
+.chart-input {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: var(--t1);
+    font-size: 13px;
+}
+.chart-input::placeholder {
+    color: rgba(136,153,184,0.5);
+}
+.chart-status {
+    font-size: 12px;
+    min-height: 18px;
+}
+.chart-plot-area {
+    flex: 1;
+    min-height: 300px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.chart-actions {
+    display: flex;
+    gap: 8px;
+}
+.chart-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+/* ═══ SSE 加载指示器 ═══ */
+.sse-loading-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--blue);
+    animation: sse-pulse 1s ease-in-out infinite;
+    margin-left: 6px;
+}
+@keyframes sse-pulse {
+    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.2); }
+}

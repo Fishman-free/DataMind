@@ -32,6 +32,65 @@ async function sendChatMessage() {
     appendMessage("user", question);
     setLoading(true);
 
+    // SSE 流式路径（优先）
+    if (typeof supportsSSE === 'function' && supportsSSE()) {
+        var bubble = appendMessage("assistant", "");
+        bubble._fullText = "";
+        var codeBlock = null;
+        var execResult = null;
+
+        var conn = createSSEConnection('/api/chat', { question: question }, {
+            onTextDelta: function (content) {
+                bubble._fullText += content;
+                var bodyEl = bubble.querySelector('.chat-msg-body');
+                if (bodyEl && typeof marked !== 'undefined') {
+                    bodyEl.innerHTML = marked.parse(bubble._fullText);
+                } else if (bodyEl) {
+                    bodyEl.textContent = bubble._fullText;
+                }
+                scrollToBottom();
+            },
+            onCodeComplete: function (code) {
+                var codeEl = document.getElementById("generated-code");
+                var pre    = document.getElementById("code-block");
+                if (codeEl && pre) {
+                    pre.textContent = code;
+                    if (window.hljs) hljs.highlightElement(pre);
+                    codeEl.style.display = "block";
+                }
+            },
+            onExecResult: function (msg) {
+                var resultEl = document.getElementById("exec-result");
+                if (!resultEl) return;
+                if (msg.success) {
+                    resultEl.innerHTML = msg.result != null
+                        ? '<pre class="bg-light p-2 rounded small">' + JSON.stringify(msg.result, null, 2) + '</pre>'
+                        : '<span class="text-muted small">执行成功，无返回值</span>';
+                    resultEl.style.display = "block";
+                } else if (msg.error) {
+                    resultEl.innerHTML = '<div class="alert alert-danger small py-1">' + msg.error + '</div>';
+                    resultEl.style.display = "block";
+                }
+            },
+            onChart: function (chartData) {
+                renderExecChart(chartData);
+                // 同时推送到图表工作台
+                if (typeof renderChart === 'function') {
+                    renderChart(chartData);
+                }
+            },
+            onError: function (message) {
+                bubble.innerHTML += '<div class="text-danger">错误：' + message + '</div>';
+            },
+            onDone: function () {
+                setLoading(false);
+                scrollToBottom();
+            }
+        });
+        return;
+    }
+
+    // Fallback：同步 fetch 路径
     try {
         const res  = await fetch("/api/chat", {
             method: "POST",
@@ -144,6 +203,7 @@ function appendMessage(role, content) {
     `;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+    return div;
 }
 
 function setLoading(on) {
@@ -151,6 +211,11 @@ function setLoading(on) {
     const spinner = document.getElementById("chat-spinner");
     if (btn)     btn.disabled             = on;
     if (spinner) spinner.style.display    = on ? "inline-block" : "none";
+
+    // SSE path handles its own bubble, so skip typing-bubble for SSE
+    if (on && typeof supportsSSE === 'function' && supportsSSE()) {
+        return;
+    }
 
     const container = document.getElementById("chat-messages");
     if (!container) return;
@@ -171,5 +236,12 @@ function setLoading(on) {
     } else {
         const bubble = document.getElementById("typing-bubble");
         if (bubble) bubble.remove();
+    }
+}
+
+function scrollToBottom() {
+    const container = document.getElementById("chat-messages");
+    if (container) {
+        container.scrollTop = container.scrollHeight;
     }
 }

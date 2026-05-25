@@ -8,62 +8,118 @@
 
 <div id="chat-section" style="display:none">
 
-    <!-- 快捷提问 -->
-    <div id="quick-questions" class="d-flex flex-wrap gap-2 mb-3">
-        <span class="quick-q-label">快捷提问：</span>
-        <button class="quick-q-btn" onclick="quickAsk('月均销售额是多少？')">月均销售额</button>
-        <button class="quick-q-btn" onclick="quickAsk('Top 10 畅销商品有哪些？')">Top 10 商品</button>
-        <button class="quick-q-btn" onclick="quickAsk('各国家销售额占比如何？')">国家分布</button>
-        <button class="quick-q-btn" onclick="quickAsk('画一个月度销售趋势折线图')">趋势图</button>
-    </div>
+    <div class="analysis-layout">
+        <!-- 左栏：对话区 -->
+        <div class="analysis-left">
 
-    <!-- 对话历史区 -->
-    <div id="chat-messages"
-         class="p-3 mb-3 overflow-auto"
-         style="min-height:180px;max-height:340px">
-    </div>
+            <!-- 快捷提问 -->
+            <div id="quick-questions" class="d-flex flex-wrap gap-2 mb-3">
+                <span class="quick-q-label">快捷提问：</span>
+                <button class="quick-q-btn" onclick="quickAsk('月均销售额是多少？')">月均销售额</button>
+                <button class="quick-q-btn" onclick="quickAsk('Top 10 畅销商品有哪些？')">Top 10 商品</button>
+                <button class="quick-q-btn" onclick="quickAsk('各国家销售额占比如何？')">国家分布</button>
+                <button class="quick-q-btn" onclick="quickAsk('画一个月度销售趋势折线图')">趋势图</button>
+            </div>
 
-    <!-- 输入栏 -->
-    <div class="input-group mb-3">
-        <input type="text" id="chat-input" class="form-control"
-               placeholder="用自然语言提问，例如：月均销售额是多少？"
-               onkeydown="if(event.key==='Enter') sendChatMessage()">
-        <button class="btn btn-primary" id="chat-send-btn" onclick="sendChatMessage()">
-            <span id="chat-spinner" class="spinner-border me-1" style="display:none"></span>
-            <i class="bi bi-send-fill"></i>
-        </button>
-        <button class="btn btn-outline-secondary" onclick="resetChat()" title="清空对话">
-            <i class="bi bi-trash"></i>
-        </button>
-    </div>
+            <!-- 对话历史区 -->
+            <div id="chat-messages"
+                 class="p-3 mb-3 overflow-auto"
+                 style="min-height:180px;max-height:340px">
+            </div>
 
-    <!-- 生成代码展示 -->
-    <div id="generated-code" class="card mb-3" style="display:none">
-        <div class="card-header d-flex align-items-center justify-content-between">
-            <span class="d-flex align-items-center gap-2">
-                <i class="bi bi-code-slash" style="color:var(--cyan)"></i>
-                生成代码
-            </span>
-            <button class="btn btn-outline-secondary btn-sm py-0 px-2"
-                    onclick="navigator.clipboard.writeText(document.getElementById('code-block').textContent)"
-                    title="复制代码">
-                <i class="bi bi-clipboard"></i>
-            </button>
+            <!-- 输入栏 -->
+            <div class="input-group mb-3">
+                <input type="text" id="chat-input" class="form-control"
+                       placeholder="用自然语言提问，例如：月均销售额是多少？"
+                       onkeydown="if(event.key==='Enter') sendChatMessage()">
+                <button class="btn btn-primary" id="chat-send-btn" onclick="sendChatMessage()">
+                    <span id="chat-spinner" class="spinner-border me-1" style="display:none"></span>
+                    <i class="bi bi-send-fill"></i>
+                </button>
+                <button class="btn btn-outline-secondary" onclick="resetChat()" title="清空对话">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+
+            <!-- 生成代码展示 -->
+            <div id="generated-code" class="card mb-3" style="display:none">
+                <div class="card-header d-flex align-items-center justify-content-between">
+                    <span class="d-flex align-items-center gap-2">
+                        <i class="bi bi-code-slash" style="color:var(--cyan)"></i>
+                        生成代码
+                    </span>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-2"
+                            onclick="navigator.clipboard.writeText(document.getElementById('code-block').textContent)"
+                            title="复制代码">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0">
+                    <pre class="m-0 p-3" style="max-height:280px;overflow:auto;border-radius:0 0 var(--r-xl) var(--r-xl)"><code id="code-block" class="language-python"></code></pre>
+                </div>
+            </div>
+
+            <!-- 执行结果 -->
+            <div id="exec-result" class="mb-3" style="display:none"></div>
+
+            <!-- 动态图表 -->
+            <div id="exec-chart" style="display:none;min-height:300px;border-radius:var(--r-xl);overflow:hidden"></div>
+
         </div>
-        <div class="card-body p-0">
-            <pre class="m-0 p-3" style="max-height:280px;overflow:auto;border-radius:0 0 var(--r-xl) var(--r-xl)"><code id="code-block" class="language-python"></code></pre>
+
+        <!-- 右栏：图表工作台 -->
+        <div class="analysis-right">
+            <!-- 图表工作台（右栏） -->
+            <div id="chart-ws" class="chart-workspace" style="display:none">
+                <div class="chart-ws-header">
+                    <i class="bi bi-graph-up"></i>
+                    <span>NL2Vis 图表工作台</span>
+                </div>
+                <div class="chart-ws-body">
+                    <!-- 输入区 -->
+                    <div class="chart-input-row">
+                        <input type="text" id="chart-input" class="chart-input"
+                               placeholder="用自然语言描述你想要的图表...">
+                        <button id="chart-send-btn" class="btn btn-primary btn-sm"
+                                style="height:36px;flex-shrink:0">
+                            <i class="bi bi-send"></i>
+                        </button>
+                    </div>
+                    <div id="chart-status" class="chart-status"></div>
+
+                    <!-- 图表渲染区 -->
+                    <div id="chart-plot-area" class="chart-plot-area"></div>
+
+                    <!-- 操作按钮 -->
+                    <div class="chart-actions">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="copyChartCode()">
+                            <i class="bi bi-clipboard me-1"></i>复制代码
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="downloadChartPNG()">
+                            <i class="bi bi-download me-1"></i>下载 PNG
+                        </button>
+                    </div>
+
+                    <!-- 快捷操作 -->
+                    <div class="chart-quick-actions">
+                        <span class="text-muted small">快捷操作：</span>
+                        <button class="btn btn-outline-info btn-sm chart-quick-btn" data-action="line">改折线图</button>
+                        <button class="btn btn-outline-info btn-sm chart-quick-btn" data-action="quarterly">按季度聚合</button>
+                        <button class="btn btn-outline-info btn-sm chart-quick-btn" data-action="top5">只看 Top 5</button>
+                    </div>
+                </div>
+            </div>
+            <div id="chart-ws-fallback" class="alert alert-info" style="display:none">
+                <i class="bi bi-info-circle me-2"></i>图表工作台需要现代浏览器支持。
+            </div>
         </div>
     </div>
 
-    <!-- 执行结果 -->
-    <div id="exec-result" class="mb-3" style="display:none"></div>
-
-    <!-- 动态图表 -->
-    <div id="exec-chart" style="display:none;min-height:300px;border-radius:var(--r-xl);overflow:hidden"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/chart-workspace.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 <script>
 /* 快捷提问 */
@@ -80,6 +136,13 @@ function quickAsk(q) {
         window.initAnalysisPage();
     }
 })();
+</script>
+
+<script>
+    // 在 DOMContentLoaded 中初始化图表工作台
+    document.addEventListener('DOMContentLoaded', function () {
+        initChartWorkspace();
+    });
 </script>
 
 {% endblock %}
