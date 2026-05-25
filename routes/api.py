@@ -594,9 +594,10 @@ def report_generate():
 
     请求体（可选）：
       {"mode": "simple"}   — 简单模式（默认），使用单 AI 调用生成精简报告
-      {"mode": "detailed"} — 详细模式，使用四 Agent 框架生成 ~3000 字深度报告
+      {"mode": "detailed"} — 深度模式，使用四 Agent 框架生成 ~3000 字深度报告
+      {"stream": "true"}   — 是否 SSE 流式输出（默认 true，detailed 模式）
 
-    响应：{title, content, generated_at, html, mode}
+    响应：{title, content, generated_at, html, mode} 或 SSE 流
     """
     err = _require_data()
     if err:
@@ -606,6 +607,7 @@ def report_generate():
     mode = (body.get("mode") or "simple").strip().lower()
     if mode not in ("simple", "detailed"):
         mode = "simple"
+    use_stream = (body.get("stream", "true") or "true").strip().lower() != "false"
 
     state = _state()
     rg    = state.get("report_generator")
@@ -618,15 +620,63 @@ def report_generate():
     summary = state["analyzer"].summary_stats()
     insights = state["insights"] or []
 
-    if mode == "detailed":
-        report = rg.generate_detailed(
-            summary,
-            insights,
-            history,
-            analyzer=state.get("analyzer"),
-        )
-    else:
-        report = rg.generate(summary, insights, history)
+    # 简洁模式 或 明确关闭流：使用同步 JSON 路径
+    if mode == "simple" or not use_stream:
+        if mode == "detailed":
+            report = rg.generate_detailed(summary, insights, history, analyzer=state.get("analyzer"))
+        else:
+            report = rg.generate(summary, insights, history)
+        html = rg.to_html(report)
+        return jsonify({**report, "html": html, "mode": mode})
 
-    html = rg.to_html(report)
-    return jsonify({**report, "html": html, "mode": mode})
+    # 深度模式 + SSE 流
+    def _report_stream():
+        yield {"type": "report_start", "mode": "detailed"}
+
+        import config as _cfg
+        from ai.report_agents import StatisticsAgent, InsightAgent, QAAgent, SynthesisAgent
+        model = _cfg.AI_MODEL
+        client = state.get("openai_client")
+
+        # 补充数值摘要
+        enriched_info = dict(summary)
+        if state.get("analyzer"):
+            try:
+                az = state["analyzer"]
+                stats = az.summary_stats()
+                ns = {}
+                for col, cs in (stats.get("numeric_stats") or {}).items():
+                    ns[col] = cs
+                if ns:
+                    enriched_info["numeric_summary"] = ns
+                    enriched_info["numeric_cols"] = list(ns.keys())
+            except Exception:
+                pass
+
+        # Agent 1: Statistics
+        yield {"type": "agent_progress", "agent": "statistics", "status": "running"}
+        stats_agent = StatisticsAgent(client, model)
+        stats_section = stats_agent.generate(enriched_info)
+        yield {"type": "section", "agent": "statistics", "content": stats_section}
+
+        # Agent 2: Insight
+        yield {"type": "agent_progress", "agent": "insight", "status": "running"}
+        insight_agent = InsightAgent(client, model)
+        insight_section = insight_agent.generate(insights)
+        yield {"type": "section", "agent": "insight", "content": insight_section}
+
+        # Agent 3: QA
+        yield {"type": "agent_progress", "agent": "qa", "status": "running"}
+        qa_agent = QAAgent(client, model)
+        qa_section = qa_agent.generate(history)
+        yield {"type": "section", "agent": "qa", "content": qa_section}
+
+        # Agent 4: Synthesis
+        yield {"type": "agent_progress", "agent": "synthesis", "status": "running"}
+        synthesis_agent = SynthesisAgent(client, model)
+        synthesis_section = synthesis_agent.generate(stats_section, insight_section, qa_section, enriched_info)
+        yield {"type": "section", "agent": "synthesis", "content": synthesis_section}
+
+        yield {"type": "report_done"}
+
+    return _sse_stream(_report_stream)

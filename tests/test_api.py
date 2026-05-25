@@ -319,6 +319,68 @@ class TestReport:
         assert len(data["content"]) > 0
 
 
+# ── /api/report/generate SSE 流式报告 ──────────────────────────
+
+class TestReportStream:
+    """SSE 流式报告格式验证。"""
+
+    def test_report_stream_detailed_yields_agent_progress(self, app, loaded_state):
+        """深度报告 SSE 流应包含 agent_progress 事件。"""
+        from unittest.mock import patch
+
+        with patch("ai.report_agents.StatisticsAgent.generate") as mock_s, \
+             patch("ai.report_agents.InsightAgent.generate") as mock_i, \
+             patch("ai.report_agents.QAAgent.generate") as mock_q, \
+             patch("ai.report_agents.SynthesisAgent.generate") as mock_y:
+            mock_s.return_value = "## 数据特征\n模拟统计数据"
+            mock_i.return_value = "## 关键洞察\n模拟洞察"
+            mock_q.return_value = "## 对话摘要\n模拟对话"
+            mock_y.return_value = "## 总结建议\n模拟建议"
+
+            client = app.test_client()
+            resp = client.post("/api/report/generate",
+                data='{"mode": "detailed", "stream": "true"}',
+                content_type="application/json")
+            assert resp.status_code == 200
+            assert resp.mimetype == "text/event-stream"
+
+            # 收集 SSE body 中的事件
+            body = b"".join(resp.response).decode("utf-8")
+            events = []
+            for line in body.split("\n"):
+                if line.startswith("data: ") and "[DONE]" not in line:
+                    events.append(json.loads(line[6:]))
+
+            event_types = {e.get("type") for e in events}
+            assert "agent_progress" in event_types, (
+                f"应该有 agent_progress 事件，实际事件类型: {event_types}"
+            )
+            assert "section" in event_types, (
+                f"应该有 section 事件，实际事件类型: {event_types}"
+            )
+            assert "report_start" in event_types
+            assert "report_done" in event_types
+
+            # 验证 agent_progress 事件包含正确的 agent 名称
+            agent_names = {
+                e.get("agent") for e in events
+                if e.get("type") == "agent_progress"
+            }
+            assert "statistics" in agent_names
+            assert "insight" in agent_names
+            assert "qa" in agent_names
+            assert "synthesis" in agent_names
+
+            # 验证 section 事件包含四个 agent 的章节
+            section_agents = {
+                e.get("agent") for e in events
+                if e.get("type") == "section"
+            }
+            assert section_agents == {"statistics", "insight", "qa", "synthesis"}
+
+            assert "data: [DONE]" in body, "SSE 流应以 [DONE] 结束"
+
+
 # ── SSE 流式响应 ─────────────────────────────────────────────
 
 class TestSSEStream:
