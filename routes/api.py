@@ -337,9 +337,10 @@ def analysis(method: str):
 @api_bp.route("/chat", methods=["POST"])
 def chat():
     """
-    AI 问答：将问题发给 CodeGenerator，返回回答 + 执行结果 + 图表。
+    AI 问答：将问题发给 AI，流式返回回答 + 执行结果 + 图表。
 
     请求体：{"question": "..."}
+    查询参数：?stream=true 启用 SSE 流模式（默认 true）
     """
     err = _require_data()
     if err:
@@ -350,27 +351,73 @@ def chat():
     if not question:
         return jsonify({"error": "问题不能为空"}), 400
 
-    state = _state()
-    cg    = state.get("code_generator")
+    state    = _state()
+    cg       = state.get("code_generator")
     if cg is None:
         return jsonify({"error": "AI 服务未启用，请在服务端配置 OPENAI_API_KEY"}), 400
 
-    session = state.get("chat_session")
-    context = session.get_context() if session else []
+    session  = state.get("chat_session")
+    context  = session.get_context() if session else []
+    df_info  = state["analyzer"].summary_stats()
+    df       = state["df_clean"]
 
-    result = cg.generate(
-        question,
-        context,
-        state["analyzer"].summary_stats(),
-        state["df_clean"],
-    )
+    # 是否启用流模式（默认 true）
+    use_stream = request.args.get("stream", "true").lower() != "false"
 
-    # 将本次问答记录到历史
-    if session:
-        session.add_message("user", question)
-        session.add_message("assistant", result.get("answer", ""))
+    if not use_stream:
+        # 旧版同步路径（不变）
+        result = cg.generate(question, context, df_info, df)
+        if session:
+            session.add_message("user", question)
+            session.add_message("assistant", result.get("answer", ""))
+        return jsonify(result)
 
-    return jsonify(result)
+    # 新 SSE 流路径
+    from ai.code_generator import _extract_code
+
+    def _chat_stream():
+        messages = list(context) + [{"role": "user", "content": question}]
+        full_text = ""
+
+        try:
+            stream = cg.client.chat.completions.create(
+                model=config.AI_MODEL,
+                messages=messages,
+                temperature=0.2,
+                max_tokens=1000,
+                stream=True,
+            )
+            for chunk in stream:
+                try:
+                    delta = chunk.choices[0].delta
+                    if delta and getattr(delta, "content", None):
+                        token = delta.content
+                        full_text += token
+                        yield {"type": "text_delta", "content": token}
+                except (AttributeError, IndexError):
+                    continue
+
+            # 提取代码块并执行
+            code = _extract_code(full_text)
+            if code:
+                yield {"type": "code_complete", "code": code}
+                exec_result = cg.execute_safe(code, df)
+                yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result")}
+                chart_data = exec_result.get("chart")
+                if chart_data:
+                    yield {"type": "chart", "data": chart_data}
+            else:
+                yield {"type": "exec_result", "success": True, "result": None}
+
+            # 记录到 ChatSession
+            if session:
+                session.add_message("user", question)
+                session.add_message("assistant", full_text)
+        except Exception as exc:
+            yield {"type": "error", "message": str(exc)}
+        yield {"type": "done"}
+
+    return _sse_stream(_chat_stream)
 
 
 @api_bp.route("/chat/history")

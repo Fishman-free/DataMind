@@ -232,6 +232,22 @@ class TestChat:
         assert client.post("/api/chat/reset").status_code == 200
 
 
+# ── /api/chat SSE 流式问答 ────────────────────────────────────
+
+class TestChatStream:
+    """SSE 流式问答端到端测试。"""
+
+    def test_chat_fallback_to_sync(self, app):
+        """无数据时 POST /api/chat 返回 400 JSON 而非 SSE。"""
+        client = app.test_client()
+        resp = client.post("/api/chat",
+            data='{"question": "test"}',
+            content_type="application/json")
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+
 # ── /api/report/generate ─────────────────────────────────────
 
 class TestReport:
