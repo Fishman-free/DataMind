@@ -553,3 +553,115 @@ class TestSSEStream:
         assert '"type": "error"' in full
         # 以 [DONE] 结尾，不会挂起
         assert "data: [DONE]" in chunks[-1]
+
+
+# ── v2.0 新增端点集成测试 ──────────────────────────────────────
+
+class TestNewEndpoints:
+    """v2.0 新增端点集成测试。"""
+
+    def test_chart_generate_no_data(self, app):
+        """无数据时 /api/chart/generate 返回 400。"""
+        client = app.test_client()
+        resp = client.post("/api/chart/generate",
+            data='{"description": "bar chart"}',
+            content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_chart_generate_empty_description(self, app, loaded_state):
+        """空描述时 /api/chart/generate 返回 400。"""
+        client = app.test_client()
+        resp = client.post("/api/chart/generate",
+            data='{"description": ""}',
+            content_type="application/json")
+        assert resp.status_code == 400
+
+    def test_chart_generate_no_api_key(self, app, loaded_state):
+        """无 API Key 时 chart_generate 返回 success=False。"""
+        client = app.test_client()
+        resp = client.post("/api/chart/generate",
+            data='{"description": "bar chart of sales"}',
+            content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is False
+        assert "explanation" in data
+
+    def test_plan_generate_returns_list(self, app, loaded_state):
+        """/api/plan/generate 返回计划列表（fallback 模式）。"""
+        client = app.test_client()
+        resp = client.post("/api/plan/generate",
+            data="{}",
+            content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data, list)
+        assert len(data) >= 3
+
+    def test_plan_generate_items_have_fields(self, app, loaded_state):
+        """计划项包含必须字段。"""
+        client = app.test_client()
+        resp = client.post("/api/plan/generate",
+            data="{}",
+            content_type="application/json")
+        data = resp.get_json()
+        for item in data:
+            assert "id" in item
+            assert "title" in item
+            assert "category" in item
+            assert "description" in item
+
+    def test_story_generate_returns_structure(self, app, loaded_state):
+        """/api/report/story 返回叙事结构（fallback 模式）。"""
+        client = app.test_client()
+        resp = client.post("/api/report/story",
+            data='{"report_content": "## Test"}',
+            content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "title" in data
+        assert "sections" in data
+        assert "key_takeaways" in data
+
+    def test_data_quality_returns_score(self, app, loaded_state):
+        """/api/data/quality 返回评分数据。"""
+        client = app.test_client()
+        resp = client.get("/api/data/quality")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "total_score" in data
+        assert "grade" in data
+        assert "dimensions" in data
+        assert "suggestions" in data
+
+    def test_data_quality_grade_format(self, app, loaded_state):
+        """grade 字段应为 A/B/C/D 之一。"""
+        client = app.test_client()
+        resp = client.get("/api/data/quality")
+        data = resp.get_json()
+        assert data["grade"] in ("A", "B", "C", "D")
+
+    def test_report_story_mode(self, app, loaded_state):
+        """report/generate 对不支持的 mode（如 story）回退到 simple 模式。"""
+        client = app.test_client()
+        resp = client.post("/api/report/generate",
+            data='{"mode": "story"}',
+            content_type="application/json")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # 不支持的 mode 回退到 simple，返回 content/title/html
+        assert "title" in data
+        assert "content" in data
+        assert data.get("mode") == "simple"
+
+    def test_upload_response_includes_quality_grade(self, app):
+        """上传成功后响应包含 quality_grade 字段。"""
+        import io
+        client = app.test_client()
+        data = io.BytesIO(b"date,sales\n2024-01-01,100\n2024-01-02,200")
+        resp = client.post("/api/upload",
+            data={"file": (data, "test.csv")},
+            content_type="multipart/form-data")
+        assert resp.status_code == 200
+        result = resp.get_json()
+        assert "quality_grade" in result
