@@ -413,13 +413,20 @@ async function fetchQualityScore() {
  * 渲染质量评分卡 UI。
  * @param {object} data - QualityScorer.score() 返回的数据
  */
+function _safePct(v) {
+    var n = Number(v);
+    if (!Number.isFinite(n)) n = 0;
+    n = Math.max(0, Math.min(100, n));
+    return n;
+}
+
 function renderQualityScore(data) {
     var card = document.getElementById('quality-scorecard');
     if (!card) return;
     card.style.display = 'block';
 
     // 环形评分
-    var score = data.total_score || 0;
+    var score = _safePct(data.total_score);
     document.getElementById('quality-score').textContent = score;
     document.getElementById('quality-grade').textContent = '等级 ' + (data.grade || '--');
 
@@ -443,17 +450,18 @@ function renderQualityScore(data) {
             'consistency': '一致性', 'timeliness': '时效性', 'accuracy': '准确性',
         };
         for (var key in data.dimensions) {
-            var dim = data.dimensions[key];
+            var dim = data.dimensions[key] || {};
             var name = dimNames[key] || key;
-            var barColor = dim.score >= 80 ? 'var(--green)' :
-                           dim.score >= 60 ? 'var(--yellow)' : 'var(--red)';
+            var dimScore = _safePct(dim.score);
+            var barColor = dimScore >= 80 ? 'var(--green)' :
+                           dimScore >= 60 ? 'var(--yellow)' : 'var(--red)';
             html += '<div class="quality-dim-item">' +
                 '<div class="quality-dim-label">' +
                     '<span>' + name + '</span>' +
-                    '<span>' + dim.score + '</span>' +
+                    '<span>' + dimScore + '</span>' +
                 '</div>' +
                 '<div class="quality-dim-bar-bg">' +
-                    '<div class="quality-dim-bar-fill" style="width:' + dim.score +
+                    '<div class="quality-dim-bar-fill" style="width:' + dimScore +
                     '%;background:' + barColor + '"></div>' +
                 '</div>' +
             '</div>';

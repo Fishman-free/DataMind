@@ -2,8 +2,13 @@
 数据质量评分卡模块。
 对上传的数据集从 5 个维度自动评估质量：
   完整性（30%）、唯一性（20%）、一致性（15%）、时效性（15%）、准确性（20%）
+综合分 0-100 + A/B/C/D 等级 + 改进建议列表，全部本地运算，零 API 依赖。
+
+来源：学生+AI
 """
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pandas as pd
@@ -11,6 +16,28 @@ import pandas as pd
 
 class QualityScorer:
     """数据质量评分器，输出 0-100 的综合质量分与 5 维度明细。"""
+
+    @staticmethod
+    def _safe_score(value: float, default: float = 0.0) -> float:
+        """统一处理分值：finite 校验 + [0,100] clamp。"""
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            numeric = float(default)
+
+        if not math.isfinite(numeric):
+            numeric = float(default)
+
+        return max(0.0, min(100.0, numeric))
+
+    def _build_dimension(self, name: str, score: float, detail: str) -> dict:
+        """构建标准维度对象，统一分值归一化。"""
+        safe_score = self._safe_score(score)
+        return {
+            "score": round(safe_score, 1),
+            "weight": self._WEIGHTS[name],
+            "detail": detail,
+        }
 
     # 维度权重
     _WEIGHTS = {
@@ -54,7 +81,7 @@ class QualityScorer:
             return {
                 "total_score": 0,
                 "grade": "D",
-                "dimensions": {},
+                "dimensions": self._score_dimensions(df_raw, df_clean, preprocess_report),
                 "suggestions": ["数据集为空，无法评估质量"],
             }
 
@@ -85,33 +112,25 @@ class QualityScorer:
 
     def _score_completeness(self, df: pd.DataFrame) -> dict:
         """完整性：各列缺失率加权扣分（满分 100）。"""
-        if len(df) == 0:
-            return {"score": 0, "weight": self._WEIGHTS["completeness"], "detail": "数据集为空"}
+        if len(df) == 0 or len(df.columns) == 0:
+            return self._build_dimension("completeness", 0, "数据集为空")
         missing_rate = df.isnull().sum().sum() / (len(df) * len(df.columns))
-        score = max(0, 100 - missing_rate * 100)
-        return {
-            "score": round(score, 1),
-            "weight": self._WEIGHTS["completeness"],
-            "detail": f"整体缺失率 {missing_rate:.2%}",
-        }
+        score = 100 - missing_rate * 100
+        return self._build_dimension("completeness", score, f"整体缺失率 {missing_rate:.2%}")
 
     def _score_uniqueness(self, df: pd.DataFrame) -> dict:
         """唯一性：基于重复行比例扣分。"""
         if len(df) == 0:
-            return {"score": 0, "weight": self._WEIGHTS["uniqueness"], "detail": "数据集为空"}
+            return self._build_dimension("uniqueness", 0, "数据集为空")
         dup_rate = df.duplicated().sum() / len(df)
-        score = max(0, 100 - dup_rate * 100)
-        return {
-            "score": round(score, 1),
-            "weight": self._WEIGHTS["uniqueness"],
-            "detail": f"重复行比例 {dup_rate:.2%}",
-        }
+        score = 100 - dup_rate * 100
+        return self._build_dimension("uniqueness", score, f"重复行比例 {dup_rate:.2%}")
 
     def _score_consistency(self, df: pd.DataFrame) -> dict:
         """一致性：数值列异常值（IQR 法）比例扣分。"""
         num_cols = df.select_dtypes(include=[np.number]).columns
         if len(num_cols) == 0:
-            return {"score": 100, "weight": self._WEIGHTS["consistency"], "detail": "无数值列"}
+            return self._build_dimension("consistency", 100, "无数值列")
         total_outliers = 0
         total_values = 0
         for col in num_cols:
@@ -127,26 +146,29 @@ class QualityScorer:
             total_outliers += outliers
             total_values += len(series)
         if total_values == 0:
-            return {"score": 100, "weight": self._WEIGHTS["consistency"], "detail": "无有效数值数据"}
+            return self._build_dimension("consistency", 100, "无有效数值数据")
         outlier_rate = total_outliers / total_values
-        score = max(0, 100 - outlier_rate * 100)
-        return {
-            "score": round(score, 1),
-            "weight": self._WEIGHTS["consistency"],
-            "detail": f"异常值比例 {outlier_rate:.2%}（IQR 法）",
-        }
+        score = 100 - outlier_rate * 100
+        return self._build_dimension("consistency", score, f"异常值比例 {outlier_rate:.2%}（IQR 法）")
 
     def _score_timeliness(self, df: pd.DataFrame) -> dict:
         """时效性：最新日期距今越久扣分越多（>7d/30d/90d 逐级扣分）。"""
-        from datetime import datetime
         date_cols = df.select_dtypes(include=["datetime64", "datetimetz"]).columns
         if len(date_cols) == 0:
             # 无日期列，给基准分 70
-            return {"score": 70, "weight": self._WEIGHTS["timeliness"], "detail": "无日期列，无法评估时效性"}
+            return self._build_dimension("timeliness", 70, "无日期列，无法评估时效性")
+
         latest = df[date_cols[0]].max()
         if pd.isna(latest):
-            return {"score": 50, "weight": self._WEIGHTS["timeliness"], "detail": "日期列为空"}
-        days_ago = (datetime.now() - latest.to_pydatetime()).days
+            return self._build_dimension("timeliness", 50, "日期列为空")
+
+        latest_ts = pd.Timestamp(latest)
+        if latest_ts.tzinfo is not None:
+            now_ts = pd.Timestamp.now(tz=latest_ts.tz)
+        else:
+            now_ts = pd.Timestamp.now()
+        days_ago = (now_ts - latest_ts).days
+
         if days_ago <= 7:
             score = 100
         elif days_ago <= 30:
@@ -155,32 +177,28 @@ class QualityScorer:
             score = 60
         else:
             score = 30
-        return {
-            "score": score,
-            "weight": self._WEIGHTS["timeliness"],
-            "detail": f"最新日期距今 {days_ago} 天",
-        }
+
+        return self._build_dimension("timeliness", score, f"最新日期距今 {days_ago} 天")
 
     def _score_accuracy(self, preprocess_report: dict) -> dict:
         """准确性：基于预处理报告中的类型转换成功率。"""
-        steps = preprocess_report.get("steps", [])
+        report = preprocess_report or {}
+        steps = report.get("steps", [])
         # 查找类型转换步骤
         conversion_failures = 0
         for step in steps:
-            if "类型转换" in step.get("name", "") or "type" in step.get("name", "").lower():
+            name = str(step.get("name", ""))
+            if "类型转换" in name or "type" in name.lower():
                 detail = step.get("detail", "")
+                detail_text = "" if detail is None else str(detail)
                 # 简单检测：detail 中是否提到失败或错误
-                if "失败" in detail:
+                if "失败" in detail_text or "错误" in detail_text:
                     conversion_failures += 1
         # 无类型转换信息时给基准分 80
-        if not any("类型转换" in s.get("name", "") or "type" in s.get("name", "").lower() for s in steps):
-            return {"score": 80, "weight": self._WEIGHTS["accuracy"], "detail": "无类型转换信息"}
-        score = max(0, 100 - conversion_failures * 20)
-        return {
-            "score": score,
-            "weight": self._WEIGHTS["accuracy"],
-            "detail": f"类型转换问题列数：{conversion_failures}",
-        }
+        if not any("类型转换" in str(s.get("name", "")) or "type" in str(s.get("name", "")).lower() for s in steps):
+            return self._build_dimension("accuracy", 80, "无类型转换信息")
+        score = 100 - conversion_failures * 20
+        return self._build_dimension("accuracy", score, f"类型转换问题列数：{conversion_failures}")
 
     # ── 综合计算 ─────────────────────────────────────────
 
