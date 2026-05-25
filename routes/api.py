@@ -54,8 +54,11 @@ def _sse_stream(generator_func, *args, **kwargs):
             for chunk in generator_func(*args, **kwargs):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
+        except GeneratorExit:
+            raise
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
     return Response(
         stream_with_context(_generate()),

@@ -4,6 +4,7 @@ routes/api.py 路由单元测试
 来源：学生+AI
 """
 import io
+import json
 import pytest
 import pandas as pd
 
@@ -251,10 +252,8 @@ class TestReport:
 class TestSSEStream:
     """SSE 流式响应格式验证。"""
 
-    def test_sse_stream_yields_valid_format(self, app, loaded_state):
-        """SSE 流每行以 'data: ' 开头，以 [DONE] 结束。"""
-        client = app.test_client()
-
+    def test_sse_stream_yields_valid_format(self, app):
+        """SSE 流每行以 'data: ' 开头、JSON 可解析、以 [DONE] 结束。"""
         def dummy_gen():
             yield {"type": "test", "content": "hello"}
             yield {"type": "done"}
@@ -265,8 +264,31 @@ class TestSSEStream:
             assert resp.mimetype == "text/event-stream"
             assert resp.headers["Cache-Control"] == "no-cache"
 
-    def test_sse_stream_error_handling(self, app, loaded_state):
-        """生成器抛出异常时 SSE 流仍返回 error 事件。"""
+            # 遍历响应体，收集所有 chunk
+            body_iter = resp.response
+            chunks: list[str] = []
+            for chunk in body_iter:
+                decoded = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+                chunks.append(decoded)
+
+        # (a) 存在以 "data: " 开头的行
+        data_lines = [c for c in chunks if c.startswith("data: ")]
+        assert len(data_lines) >= 2, f"期待至少 2 条 data 行，实际 {len(data_lines)}"
+
+        # (b) 非 [DONE] 的 data 行可 JSON 反序列化
+        for line in data_lines:
+            if "[DONE]" in line:
+                continue
+            payload = line[len("data: "):].rstrip("\n")
+            parsed = json.loads(payload)  # 不应抛出异常
+            assert isinstance(parsed, dict)
+
+        # (c) 最后一条 data chunk 为 [DONE]
+        last = chunks[-1].rstrip("\n")
+        assert last == "data: [DONE]", f"期待 [DONE] 结尾，实际: {last!r}"
+
+    def test_sse_stream_error_handling(self, app):
+        """生成器抛出异常时 SSE 流返回 error 事件并以 [DONE] 结束。"""
         def bad_gen():
             yield {"type": "start"}
             raise RuntimeError("模拟错误")
@@ -275,9 +297,37 @@ class TestSSEStream:
         with app.test_request_context():
             resp = _sse_stream(bad_gen)
             body_iter = resp.response
-            chunks = []
+            chunks: list[str] = []
             for chunk in body_iter:
                 decoded = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
                 chunks.append(decoded)
-            full = "".join(chunks)
-            assert '"type": "error"' in full
+
+        full = "".join(chunks)
+        assert '"type": "error"' in full
+        # 异常后也应发送 [DONE]
+        assert "data: [DONE]" in chunks[-1]
+
+    def test_sse_stream_non_serializable_data(self, app):
+        """生成器 yield 不可序列化对象时不会崩溃，并产生 error 事件。"""
+        def non_serializable_gen():
+            yield {"type": "start"}
+            # 带 datetime 的 dict 不能直接 json.dumps
+            from datetime import datetime
+            yield {"type": "bad", "timestamp": datetime.now()}
+
+        from routes.api import _sse_stream
+        with app.test_request_context():
+            resp = _sse_stream(non_serializable_gen)
+            body_iter = resp.response
+            chunks: list[str] = []
+            for chunk in body_iter:
+                decoded = chunk.decode("utf-8") if isinstance(chunk, bytes) else str(chunk)
+                chunks.append(decoded)
+
+        full = "".join(chunks)
+        # 第一条正常数据成功
+        assert '"type": "start"' in full
+        # 不可序列化数据触发 error 事件
+        assert '"type": "error"' in full
+        # 以 [DONE] 结尾，不会挂起
+        assert "data: [DONE]" in chunks[-1]
