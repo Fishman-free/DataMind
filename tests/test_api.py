@@ -266,6 +266,43 @@ class TestChatStream:
         assert data["success"] is True
         assert data["result"] == 1250.5
 
+    def test_chat_stream_yields_expected_events(self, app, loaded_state):
+        """流模式下 SSE 产出预期事件序列。"""
+        from unittest.mock import MagicMock
+
+        # 构造 mock chunk
+        mock_chunk = MagicMock()
+        mock_chunk.choices = [MagicMock()]
+        mock_chunk.choices[0].delta.content = "Hello"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = [mock_chunk]
+
+        mock_cg = MagicMock()
+        mock_cg.client = mock_client
+        mock_cg.extract_code.return_value = ""  # no code in response
+        mock_cg.validate_code.return_value = True
+
+        # 注入 mock
+        from app import app_state
+        app_state["code_generator"] = mock_cg
+
+        client = app.test_client()
+        resp = client.post("/api/chat?stream=true",
+            data='{"question": "test question"}',
+            content_type="application/json")
+
+        assert resp.status_code == 200
+        assert resp.mimetype == "text/event-stream"
+
+        # 收集 SSE 事件
+        body = b"".join(resp.response).decode("utf-8")
+        events = [line[6:] for line in body.split("\n") if line.startswith("data: ")]
+
+        # 验证事件类型
+        assert any("text_delta" in e for e in events), "应该有 text_delta 事件"
+        assert "data: [DONE]" in body or any("done" in e for e in events), "应该有 done 事件"
+
 
 # ── /api/report/generate ─────────────────────────────────────
 

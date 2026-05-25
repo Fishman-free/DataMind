@@ -395,15 +395,18 @@ def chat():
                 except (AttributeError, IndexError):
                     continue
 
-            # 提取代码块并执行
+            # 提取代码块并执行（先做安全检查）
             code = cg.extract_code(full_text)
             if code:
-                yield {"type": "code_complete", "code": code}
-                exec_result = cg.execute_safe(code, df)
-                yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result")}
-                chart_data = exec_result.get("chart")
-                if chart_data:
-                    yield {"type": "chart", "data": chart_data}
+                if not cg.validate_code(code):
+                    yield {"type": "error", "message": "代码包含危险操作，已被拒绝执行"}
+                else:
+                    yield {"type": "code_complete", "code": code}
+                    exec_result = cg.execute_safe(code, df)
+                    yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result")}
+                    chart_data = exec_result.get("chart")
+                    if chart_data:
+                        yield {"type": "chart", "data": chart_data}
 
             # 记录到 ChatSession
             if session:
