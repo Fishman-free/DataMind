@@ -15,6 +15,7 @@ REST API 路由蓝图 — DataMind 后端接口。
   GET  /api/chat/history              对话历史
   POST /api/chat/reset                重置对话
   POST /api/report/generate           生成 Markdown 分析报告
+  POST /api/report/story              生成数据叙事故事
 
 来源：学生+AI
 """
@@ -759,3 +760,32 @@ def report_generate():
         yield {"type": "report_done"}
 
     return _sse_stream(_report_stream)
+
+
+@api_bp.route("/report/story", methods=["POST"])
+def report_story():
+    """
+    生成数据叙事。
+
+    请求体（可选）：
+      {"report_content": "..."}  — 已有报告 Markdown 内容
+
+    响应：{title, subtitle, sections, key_takeaways}
+    """
+    err = _require_data()
+    if err:
+        return err
+
+    body = request.get_json(silent=True) or {}
+    state = _state()
+
+    from ai.storyteller import Storyteller
+    st = Storyteller(state.get("openai_client"))
+    summary = state["analyzer"].summary_stats()
+    insights = state["insights"] or []
+    session = state.get("chat_session")
+    history = session.history if session else []
+    report_content = body.get("report_content", "")
+
+    story = st.tell(summary, insights, history, report_content)
+    return jsonify(story)
