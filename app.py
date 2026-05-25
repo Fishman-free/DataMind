@@ -19,6 +19,7 @@ app_state: dict = {
     "code_generator": None,     # CodeGenerator 实例
     "report_generator": None,   # ReportGenerator 实例
     "openai_client": None,      # openai.OpenAI 实例
+    "quality_score": None,      # 数据质量评分卡结果
 }
 
 

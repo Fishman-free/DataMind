@@ -7,6 +7,7 @@ REST API 路由蓝图 — DataMind 后端接口。
   GET  /api/data/summary              数据集概览统计
   GET  /api/data/preview              前 N 行数据预览
   GET  /api/data/preprocess-report    预处理步骤摘要
+  GET  /api/data/quality              数据质量评分卡
   GET  /api/insights                  自动洞察列表
   GET  /api/analysis/<method>         调用内置分析方法
   POST /api/chat                      AI 问答（代码生成+执行）
@@ -146,6 +147,12 @@ def _rebuild_state_from_file(save_path: str) -> dict:
     state["detector"]          = detector
     state["insights"]          = insights
     state["chat_session"]      = ChatSession(summary)
+
+    # 质量评分
+    from data.quality_scorer import QualityScorer
+    scorer = QualityScorer()
+    state["quality_score"] = scorer.score(df_raw, df_clean, prep_report)
+
     return {"summary": summary, "prep_report": prep_report}
 
 
@@ -235,6 +242,7 @@ def upload():
             "row_count":    prep_report["original_rows"],
             "clean_rows":   prep_report["final_rows"],
             "column_count": summary["column_count"],
+            "quality_grade": _state()["quality_score"]["grade"],
         })
 
     except UnsupportedFormatError as exc:
@@ -271,6 +279,27 @@ def preprocess_report():
     if err:
         return err
     return jsonify(_state()["preprocess_report"])
+
+
+@api_bp.route("/data/quality")
+def data_quality():
+    """返回数据质量评分卡。"""
+    err = _require_data()
+    if err:
+        return err
+    state = _state()
+    qs = state.get("quality_score")
+    if qs is None:
+        # 按需计算
+        from data.quality_scorer import QualityScorer
+        scorer = QualityScorer()
+        qs = scorer.score(
+            state["df_raw"],
+            state["df_clean"],
+            state.get("preprocess_report", {}),
+        )
+        state["quality_score"] = qs
+    return jsonify(qs)
 
 
 # ── 洞察接口 ──────────────────────────────────────────────────
