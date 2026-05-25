@@ -412,3 +412,153 @@ class Analyzer:
                 for row in pivot.values
             ],
         }
+
+    # ── 通用分析方法（适用于任意数据集）────────────────────────
+
+    def numeric_distributions(self, max_cols: int = 6) -> list[dict]:
+        """
+        返回 Top N 数值列的直方图数据。
+
+        Returns: [{"col": str, "bins": list, "counts": list, "mean": float, "std": float}]
+        """
+        num_cols = list(self.df.select_dtypes(include="number").columns)[:max_cols]
+        result = []
+        for col in num_cols:
+            series = self.df[col].dropna()
+            if len(series) == 0:
+                continue
+            counts, bin_edges = np.histogram(series, bins=30)
+            result.append({
+                "col":    col,
+                "bins":   [round(float(x), 4) for x in bin_edges[:-1]],
+                "counts": [int(x) for x in counts],
+                "mean":   round(float(series.mean()), 4),
+                "std":    round(float(series.std()), 4),
+            })
+        return result
+
+    def category_distributions(self, max_cols: int = 4,
+                                max_categories: int = 20) -> list[dict]:
+        """
+        返回低基数类别列的频次数据。
+
+        Returns: [{"col": str, "labels": list, "counts": list}]
+        """
+        cat_cols = [
+            c for c in self.df.select_dtypes(include=["object", "category"]).columns
+            if self.df[c].nunique() <= max_categories
+        ][:max_cols]
+        result = []
+        for col in cat_cols:
+            vc = self.df[col].value_counts()
+            result.append({
+                "col":    col,
+                "labels": [str(x) for x in vc.index.tolist()],
+                "counts": [int(x) for x in vc.values.tolist()],
+            })
+        return result
+
+    def scatter_top_pairs(self, n_pairs: int = 3, sample_n: int = 500) -> list[dict]:
+        """
+        取相关性最高的 N 对数值列返回散点图数据（最多 sample_n 个采样点）。
+
+        Returns: [{"x_col": str, "y_col": str, "x": list, "y": list, "corr": float}]
+        """
+        num_cols = list(self.df.select_dtypes(include="number").columns)
+        if len(num_cols) < 2:
+            return []
+        corr_matrix = self.df[num_cols].corr().abs()
+        pairs: list[tuple[float, str, str]] = []
+        seen: set[frozenset] = set()
+        for i, c1 in enumerate(num_cols):
+            for c2 in num_cols[i + 1:]:
+                key = frozenset([c1, c2])
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append((corr_matrix.loc[c1, c2], c1, c2))
+        pairs.sort(reverse=True)
+        result = []
+        for corr_val, c1, c2 in pairs[:n_pairs]:
+            sub = self.df[[c1, c2]].dropna()
+            if len(sub) > sample_n:
+                sub = sub.sample(sample_n, random_state=42)
+            result.append({
+                "x_col": c1,
+                "y_col": c2,
+                "x":     [round(float(v), 4) for v in sub[c1].tolist()],
+                "y":     [round(float(v), 4) for v in sub[c2].tolist()],
+                "corr":  round(float(corr_val), 4),
+            })
+        return result
+
+    def box_plots(self, max_cols: int = 6) -> list[dict]:
+        """
+        返回数值列的箱线图统计数据。
+
+        Returns: [{"col": str, "q1": float, "median": float, "q3": float,
+                   "lower": float, "upper": float, "outliers": list}]
+        """
+        num_cols = list(self.df.select_dtypes(include="number").columns)[:max_cols]
+        result = []
+        for col in num_cols:
+            series = self.df[col].dropna()
+            if len(series) == 0:
+                continue
+            q1 = float(series.quantile(0.25))
+            q3 = float(series.quantile(0.75))
+            iqr = q3 - q1
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+            outliers = series[(series < lower) | (series > upper)].tolist()
+            result.append({
+                "col":      col,
+                "q1":       round(q1, 4),
+                "median":   round(float(series.median()), 4),
+                "q3":       round(q3, 4),
+                "lower":    round(lower, 4),
+                "upper":    round(upper, 4),
+                "outliers": [round(float(x), 4) for x in outliers[:50]],
+            })
+        return result
+
+    def preprocess_visual(self, pp_report: dict) -> dict:
+        """
+        生成预处理可视化数据（前后对比 + 缺失值热力图）。
+
+        Returns:
+          {
+            "before_after": [{"step": str, "before": int, "after": int, "removed": int}],
+            "missing_heatmap": [{"col": str, "missing_count": int, "missing_pct": float}]
+          }
+        """
+        rows_orig = len(self.df) + pp_report.get("duplicates_removed", 0)
+        rows_clean = len(self.df)
+
+        before_after = [
+            {
+                "step":    "去重",
+                "before":  rows_orig,
+                "after":   rows_clean,
+                "removed": pp_report.get("duplicates_removed", 0),
+            },
+            {
+                "step":    "缺失值处理",
+                "before":  pp_report.get("missing_filled", 0) + pp_report.get("missing_dropped_cols", 0),
+                "after":   0,
+                "removed": pp_report.get("missing_filled", 0),
+            },
+        ]
+
+        missing_heatmap = []
+        for col in self.df.columns:
+            mc = int(self.df[col].isnull().sum())
+            missing_heatmap.append({
+                "col":           col,
+                "missing_count": mc,
+                "missing_pct":   round(mc / max(len(self.df), 1) * 100, 2),
+            })
+
+        return {
+            "before_after":    before_after,
+            "missing_heatmap": missing_heatmap,
+        }
