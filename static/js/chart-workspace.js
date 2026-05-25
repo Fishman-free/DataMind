@@ -3,11 +3,14 @@
  *
  * 管理自然语言图表生成、渲染和迭代修改。
  * Plotly.react() 渲染交互图表，支持代码复制和 PNG 下载。
+ * 与 chat.js 的双向图表同步通过全局变量和 window 函数实现。
+ *
+ * 来源：学生+AI
  */
 
-let _chartWorkspace = null;
-let _currentChartData = null;
-let _currentChartCode = '';
+window._chartWorkspace = null;
+window._currentChartData = null;
+window._currentChartCode = '';
 
 /**
  * 初始化图表工作台。

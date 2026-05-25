@@ -88,7 +88,7 @@ async function sendChatMessage() {
                 if (typeof renderChart === 'function') {
                     renderChart(chartData);
                 }
-                if (typeof _currentChartData !== 'undefined') _currentChartData = chartData;
+                window._currentChartData = chartData;  // 直接写入，无需判断
                 // 更新工作台状态提示，告知图表已来自对话
                 var statusEl = document.getElementById('chart-status');
                 if (statusEl) {
@@ -407,29 +407,52 @@ function _injectExecResult(bubble, msg) {
  * @param {object} chartData - Plotly 图表配置
  */
 /**
- * 工作台图表 → 对话气泡同步。
- * 当 NL2Vis 工作台生成新图表时，更新对话区最近气泡中的内联图表，
- * 使两侧始终展示相同图表。
- *
- * @param {object} chartData - Plotly 图表配置（{data, layout}）
+ * 工作台图表 → 对话区同步。
+ * - 若对话区有已有图表（.exec-chart-inline），就地更新最后一个；
+ * - 若无已有图表，在对话区追加一条"工作台图表"系统消息。
  */
 window.updateChatChartFromWorkspace = function (chartData) {
     if (!chartData || !window.Plotly) return;
     var container = document.getElementById('chat-messages');
     if (!container) return;
-    // 找到最后一个内联图表元素并就地更新（不新增消息）
+
     var inlineCharts = container.querySelectorAll('.exec-chart-inline');
-    if (inlineCharts.length === 0) return;
-    var lastChart = inlineCharts[inlineCharts.length - 1];
-    try {
-        var traces = (chartData.data !== undefined) ? (chartData.data || []) : [];
-        var layout = chartData.layout || {};
-        Plotly.react(lastChart, traces, layout, { responsive: true });
-        scrollToBottom();
-    } catch (e) {
-        console.error('工作台图表同步到对话失败:', e);
+    if (inlineCharts.length > 0) {
+        // 就地更新最后一个图表
+        var lastChart = inlineCharts[inlineCharts.length - 1];
+        try {
+            var traces = (chartData.data !== undefined) ? (chartData.data || []) : [];
+            var layout  = chartData.layout || {};
+            Plotly.react(lastChart, traces, layout, { responsive: true });
+            scrollToBottom();
+        } catch (e) {
+            console.error('工作台图表同步到对话失败:', e);
+        }
+    } else {
+        // 无已有图表 → 新建一条系统消息展示工作台图表
+        _appendWorkspaceChartMessage(chartData);
     }
 };
+
+/**
+ * 在对话区追加一条"工作台图表同步"系统消息。
+ * @param {object} chartData - Plotly 图表配置
+ */
+function _appendWorkspaceChartMessage(chartData) {
+    var container = document.getElementById('chat-messages');
+    if (!container) return;
+
+    var bubble = document.createElement('div');
+    bubble.className = 'message assistant';
+    bubble.innerHTML =
+        '<div class="chat-msg-body">' +
+        '<p style="color:var(--cyan);font-size:0.82em;margin-bottom:6px">' +
+        '<i class="bi bi-graph-up me-1"></i>工作台图表已同步至对话</p>' +
+        '</div>';
+    container.appendChild(bubble);
+    _injectChart(bubble, chartData);
+    scrollToBottom();
+}
 
 function _injectChart(bubble, chartData) {
     if (!bubble || !chartData || !window.Plotly) return;
