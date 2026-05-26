@@ -1404,4 +1404,4 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-*DataMind v3.0 — 来源：学生 + AI*
+*DataMind v3.1 — 来源：学生 + AI*
