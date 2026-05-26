@@ -422,7 +422,8 @@ window.updateChatChartFromWorkspace = function (chartData) {
         var lastChart = inlineCharts[inlineCharts.length - 1];
         try {
             var traces = (chartData.data !== undefined) ? (chartData.data || []) : [];
-            var layout  = chartData.layout || {};
+            var layout  = _cleanInjectLayout(chartData.layout || {});
+            traces = _ensureChatMarkerVisibility(traces);
             Plotly.react(lastChart, traces, layout, { responsive: true });
             scrollToBottom();
         } catch (e) {
@@ -481,14 +482,59 @@ function _injectChart(bubble, chartData) {
     }
 
     try {
+        var traces, rawLayout;
         if (chartData.data && chartData.layout !== undefined) {
-            Plotly.newPlot(div, chartData.data, chartData.layout || {}, { responsive: true });
+            traces    = chartData.data || [];
+            rawLayout = chartData.layout || {};
         } else {
-            Plotly.newPlot(div, chartData, {}, { responsive: true });
+            traces    = Array.isArray(chartData) ? chartData : [chartData];
+            rawLayout = {};
         }
+        // 剥离嵌入模板、强制透明背景，并确保 scatter marker 可见性
+        var layout = _cleanInjectLayout(rawLayout);
+        traces = _ensureChatMarkerVisibility(traces);
+        Plotly.newPlot(div, traces, layout, { responsive: true });
     } catch (e) {
         console.error("图表渲染失败:", e);
     }
 
     scrollToBottom();
+}
+
+/**
+ * 清理对话区图表 layout：剥离 template、强制透明背景。
+ * @param {object} layout
+ * @returns {object}
+ */
+function _cleanInjectLayout(layout) {
+    var cleaned = Object.assign({}, layout);
+    delete cleaned.template;
+    cleaned.paper_bgcolor = 'rgba(0,0,0,0)';
+    cleaned.plot_bgcolor  = 'rgba(0,0,0,0)';
+    return cleaned;
+}
+
+/**
+ * 确保散点 trace 的 marker 在深色对话气泡中可见。
+ * @param {Array} traces
+ * @returns {Array}
+ */
+function _ensureChatMarkerVisibility(traces) {
+    if (!Array.isArray(traces)) return traces;
+    return traces.map(function (trace) {
+        if (!trace) return trace;
+        var t = Object.assign({}, trace);
+        if (t.type === 'scatter' || t.type === 'scattergl') {
+            // 先继承原有 marker，再强制覆盖不可见项
+            var marker = Object.assign({}, t.marker || {});
+            // 若 color 不是数据映射数组，则确保为可见颜色
+            if (!Array.isArray(marker.color) && !marker.color) {
+                marker.color = 'rgba(0,229,255,0.75)';
+            }
+            if (!marker.size || marker.size < 5) marker.size = 6;
+            if (!marker.opacity || marker.opacity < 0.3) marker.opacity = 0.85;
+            t.marker = marker;
+        }
+        return t;
+    });
 }

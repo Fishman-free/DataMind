@@ -88,34 +88,118 @@
     </div>
 </div>
 
-<!-- 预处理摘要 -->
+<!-- 预处理 Pipeline 可视化 -->
 <div id="preprocess-section" class="card mb-4" style="display:none">
     <div class="card-header d-flex align-items-center justify-content-between">
         <span class="d-flex align-items-center gap-2">
-            <i class="bi bi-gear" style="color:var(--cyan)"></i>
-            预处理摘要
+            <i class="bi bi-cpu" style="color:var(--cyan)"></i>
+            数据预处理 Pipeline
+            <span style="font-size:0.72em;color:rgba(255,255,255,0.3);font-family:'JetBrains Mono',monospace">
+                7-step · chain · local
+            </span>
         </span>
         <button id="download-clean-btn" class="btn btn-outline-secondary btn-sm"
                 onclick="downloadCleanData()" title="下载清洗后的数据">
-            <i class="bi bi-download me-1"></i>下载清洗数据 CSV
+            <i class="bi bi-download me-1"></i>下载清洗数据
         </button>
     </div>
     <div class="card-body p-0">
-        <div class="prep-timeline px-4 py-2" id="prep-timeline"></div>
-        <!-- 预处理可视化 -->
+        <!-- 7步 Pipeline 主体 -->
+        <div class="pipeline-wrapper px-4 pt-3 pb-0" id="prep-timeline">
+            <div class="pipeline-flow">
+                <!-- Step 01 去重 -->
+                <div class="pstep pstep--blue" id="pstep-0">
+                    <div class="pstep-num">01</div>
+                    <div class="pstep-icon"><i class="bi bi-layers-fill"></i></div>
+                    <div class="pstep-name">去重</div>
+                    <div class="pstep-method">drop_duplicates()</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-0">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 02 文本清洗 -->
+                <div class="pstep pstep--blue" id="pstep-1">
+                    <div class="pstep-num">02</div>
+                    <div class="pstep-icon"><i class="bi bi-scissors"></i></div>
+                    <div class="pstep-name">文本清洗</div>
+                    <div class="pstep-method">strip + 控制符移除</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-1">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 03 缺失值 -->
+                <div class="pstep pstep--cyan" id="pstep-2">
+                    <div class="pstep-num">03</div>
+                    <div class="pstep-icon"><i class="bi bi-bandaid-fill"></i></div>
+                    <div class="pstep-name">缺失值处理</div>
+                    <div class="pstep-method">偏态→中位数/均值/众数</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-2">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 04 类型转换 -->
+                <div class="pstep pstep--cyan" id="pstep-3">
+                    <div class="pstep-num">04</div>
+                    <div class="pstep-icon"><i class="bi bi-arrow-repeat"></i></div>
+                    <div class="pstep-name">类型转换</div>
+                    <div class="pstep-method">str→datetime/numeric/cat</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-3">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 05 无效过滤 -->
+                <div class="pstep pstep--amber" id="pstep-4">
+                    <div class="pstep-num">05</div>
+                    <div class="pstep-icon"><i class="bi bi-funnel-fill"></i></div>
+                    <div class="pstep-name">无效过滤</div>
+                    <div class="pstep-method">Qty≤0 / Price&lt;0 移除</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-4">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 06 异常标记 -->
+                <div class="pstep pstep--red" id="pstep-5">
+                    <div class="pstep-num">06</div>
+                    <div class="pstep-icon"><i class="bi bi-graph-up-arrow"></i></div>
+                    <div class="pstep-name">异常标记</div>
+                    <div class="pstep-method">IQR ×1.5轻度 / ×3.0极端</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-5">加载中…</div>
+                </div>
+                <div class="pflow-arrow"><i class="bi bi-caret-right-fill"></i></div>
+                <!-- Step 07 特征工程 -->
+                <div class="pstep pstep--green" id="pstep-6">
+                    <div class="pstep-num">07</div>
+                    <div class="pstep-icon"><i class="bi bi-lightning-charge-fill"></i></div>
+                    <div class="pstep-name">特征工程</div>
+                    <div class="pstep-method">日期分解 + TotalAmount</div>
+                    <div class="pstep-stat pstat-pending" id="pstat-6">加载中…</div>
+                </div>
+            </div>
+            <!-- Pipeline 完成汇总条 -->
+            <div class="pipeline-result-bar" id="pipeline-result-bar" style="display:none">
+                <i class="bi bi-check-circle-fill me-2" style="color:var(--green)"></i>
+                Pipeline 完成：原始
+                <strong id="pr-before" style="color:rgba(255,255,255,0.8)">—</strong> 行
+                <i class="bi bi-arrow-right mx-1" style="opacity:0.5"></i>
+                清洗后 <strong id="pr-after" style="color:var(--green)">—</strong> 行
+                <span id="pr-delta" style="margin-left:10px;font-size:0.78em;opacity:0.55"></span>
+            </div>
+        </div>
+        <!-- 分隔标题 -->
+        <div class="px-4 pb-1 pt-3" style="font-size:0.75em;color:rgba(255,255,255,0.3);
+             letter-spacing:0.08em;text-transform:uppercase;
+             border-top:1px solid rgba(255,255,255,0.04);margin-top:12px">
+            <i class="bi bi-bar-chart-fill me-1"></i>清洗影响可视化
+        </div>
+        <!-- 预处理可视化图表 -->
         <div id="preprocess-viz" class="px-4 pb-3" style="display:none">
             <div class="row g-3 mt-1">
                 <div class="col-12 col-md-6">
                     <div style="font-size:0.8em;color:var(--blue);margin-bottom:4px">
                         <i class="bi bi-bar-chart-steps me-1"></i>清洗前后数据量对比
                     </div>
-                    <div id="chart-preprocess-ba" style="height:160px"></div>
+                    <div id="chart-preprocess-ba" style="height:160px;overflow:hidden"></div>
                 </div>
                 <div class="col-12 col-md-6">
                     <div style="font-size:0.8em;color:var(--cyan);margin-bottom:4px">
                         <i class="bi bi-table me-1"></i>各列缺失率
                     </div>
-                    <div id="chart-missing-heatmap" style="height:160px"></div>
+                    <div id="chart-missing-heatmap" style="height:160px;overflow:hidden"></div>
                 </div>
             </div>
         </div>
@@ -230,6 +314,158 @@
     align-items: flex-start;
     gap: 6px;
 }
+
+/* ═══ Pipeline 可视化 ══════════════════════════════════════ */
+.pipeline-wrapper {
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(79,159,255,0.3) transparent;
+}
+.pipeline-wrapper::-webkit-scrollbar { height: 4px; }
+.pipeline-wrapper::-webkit-scrollbar-track { background: transparent; }
+.pipeline-wrapper::-webkit-scrollbar-thumb { background: rgba(79,159,255,0.3); border-radius: 2px; }
+
+.pipeline-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: max-content;
+    padding-bottom: 8px;
+}
+
+.pflow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+    color: rgba(255,255,255,0.18);
+    font-size: 0.85em;
+    flex-shrink: 0;
+    align-self: center;
+    margin-top: -12px;
+}
+
+/* 步骤卡片 */
+.pstep {
+    flex-shrink: 0;
+    width: 132px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 14px 12px 12px;
+    background: rgba(255,255,255,0.025);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    position: relative;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease, border-color 0.3s;
+}
+.pstep::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 10px 10px 0 0;
+}
+.pstep.active {
+    opacity: 1;
+    transform: translateY(0);
+}
+.pstep:hover {
+    border-color: rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.04);
+}
+
+/* 颜色变体 */
+.pstep--blue::before  { background: linear-gradient(90deg, #4d8aff, #00e5ff); }
+.pstep--blue  { border-top-color: rgba(77,138,255,0.3); }
+.pstep--cyan::before  { background: linear-gradient(90deg, #00e5ff, #00b4d8); }
+.pstep--cyan  { border-top-color: rgba(0,229,255,0.3); }
+.pstep--amber::before { background: linear-gradient(90deg, #f5a623, #ff8c00); }
+.pstep--amber { border-top-color: rgba(245,166,35,0.3); }
+.pstep--red::before   { background: linear-gradient(90deg, #ff4d6d, #c9184a); }
+.pstep--red   { border-top-color: rgba(255,77,109,0.3); }
+.pstep--green::before { background: linear-gradient(90deg, #00e5a0, #0acd8f); }
+.pstep--green { border-top-color: rgba(0,229,160,0.3); }
+
+/* 步骤内部元素 */
+.pstep-num {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.65em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.25);
+    line-height: 1;
+}
+.pstep--blue  .pstep-num { color: rgba(77,138,255,0.55); }
+.pstep--cyan  .pstep-num { color: rgba(0,229,255,0.55); }
+.pstep--amber .pstep-num { color: rgba(245,166,35,0.55); }
+.pstep--red   .pstep-num { color: rgba(255,77,109,0.55); }
+.pstep--green .pstep-num { color: rgba(0,229,160,0.55); }
+
+.pstep-icon {
+    font-size: 1.3em;
+    line-height: 1;
+    margin: 2px 0;
+}
+.pstep--blue  .pstep-icon { color: #4d8aff; }
+.pstep--cyan  .pstep-icon { color: #00e5ff; }
+.pstep--amber .pstep-icon { color: #f5a623; }
+.pstep--red   .pstep-icon { color: #ff4d6d; }
+.pstep--green .pstep-icon { color: #00e5a0; }
+
+.pstep-name {
+    font-size: 0.82em;
+    font-weight: 600;
+    color: rgba(255,255,255,0.88);
+    line-height: 1.2;
+}
+.pstep-method {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 0.63em;
+    color: rgba(255,255,255,0.28);
+    line-height: 1.3;
+    word-break: break-all;
+}
+.pstep-stat {
+    font-size: 0.72em;
+    color: rgba(255,255,255,0.6);
+    line-height: 1.4;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding-top: 6px;
+    margin-top: 2px;
+    min-height: 28px;
+}
+.pstep-stat.pstat-pending {
+    color: rgba(255,255,255,0.2);
+    font-style: italic;
+}
+.pstep--blue  .pstep-stat strong { color: #4d8aff; }
+.pstep--cyan  .pstep-stat strong { color: #00e5ff; }
+.pstep--amber .pstep-stat strong { color: #f5a623; }
+.pstep--red   .pstep-stat strong { color: #ff4d6d; }
+.pstep--green .pstep-stat strong { color: #00e5a0; }
+
+/* Pipeline 完成结果条 */
+.pipeline-result-bar {
+    margin: 10px 0 6px;
+    padding: 8px 14px;
+    background: rgba(0,229,160,0.06);
+    border: 1px solid rgba(0,229,160,0.18);
+    border-radius: 8px;
+    font-size: 0.8em;
+    color: rgba(255,255,255,0.65);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    animation: pr-fade-in 0.5s ease;
+}
+@keyframes pr-fade-in {
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
 </style>
 <script>
 window.initOverviewPage = async function () {
@@ -309,37 +545,107 @@ function renderMetrics(s) {
 }
 
 function renderPrepTimeline(prep) {
-    const steps = [
-        ["去重",           prep.remove_duplicates?.removed != null
-            ? `移除 <strong>${prep.remove_duplicates.removed.toLocaleString()}</strong> 条重复记录` : "无"],
-        ["缺失值处理", (() => {
-            const m   = prep.handle_missing || {};
-            const f   = Object.keys(m.filled_cols || {}).length;
-            const d   = (m.high_missing_cols || []).length;
-            return `填充 <strong>${f}</strong> 列，删除 <strong>${d}</strong> 高缺失列`;
-        })()],
-        ["类型转换",       (() => {
-            const c = Object.keys(prep.convert_types?.converted || {}).length;
-            return c ? `转换 <strong>${c}</strong> 列` : "无需转换";
-        })()],
-        ["无效记录",       prep.filter_invalid_records?.removed != null
-            ? `过滤 <strong>${prep.filter_invalid_records.removed.toLocaleString()}</strong> 条无效记录` : "—"],
-        ["异常值",         prep.filter_outliers?.flagged != null
-            ? `标记 <strong>${prep.filter_outliers.flagged}</strong> 个异常值` : "—"],
-        ["新增特征",       (() => {
-            const a = prep.add_features?.added || [];
-            return a.length ? a.map(f => `<span class="badge bg-secondary me-1">${f}</span>`).join("") : "无";
-        })()],
-        ["最终记录数",     prep.final_rows != null
-            ? `<strong style="color:var(--green)">${prep.final_rows.toLocaleString()}</strong> 条` : "—"],
+    // 计算每步统计文本（填入 pstat-N 元素）
+    const statTexts = [
+        // 0: 去重
+        prep.remove_duplicates?.removed != null
+            ? (prep.remove_duplicates.removed > 0
+                ? `移除 <strong>${prep.remove_duplicates.removed.toLocaleString()}</strong> 条重复`
+                : `无重复记录`)
+            : "—",
+
+        // 1: 文本清洗
+        (() => {
+            const cols = (prep.clean_text?.cleaned_cols || []);
+            return cols.length
+                ? `清洗 <strong>${cols.length}</strong> 个文本列`
+                : "无文本列";
+        })(),
+
+        // 2: 缺失值
+        (() => {
+            const m = prep.handle_missing || {};
+            const f = Object.keys(m.filled_cols || {}).length;
+            const h = (m.high_missing_cols || []).length;
+            if (f === 0) return "无缺失值";
+            return h > 0
+                ? `填充 <strong>${f}</strong> 列，其中 <strong>${h}</strong> 列高缺失率`
+                : `填充 <strong>${f}</strong> 列`;
+        })(),
+
+        // 3: 类型转换
+        (() => {
+            const conv = prep.convert_types?.converted || {};
+            const keys = Object.keys(conv);
+            if (!keys.length) return "无需转换";
+            const dt  = keys.filter(k => conv[k] === "datetime").length;
+            const num = keys.filter(k => conv[k] === "numeric").length;
+            const cat = keys.filter(k => conv[k] === "category").length;
+            const parts = [];
+            if (dt)  parts.push(`<strong>${dt}</strong> 日期`);
+            if (num) parts.push(`<strong>${num}</strong> 数值`);
+            if (cat) parts.push(`<strong>${cat}</strong> 类别`);
+            return parts.join(" · ");
+        })(),
+
+        // 4: 无效过滤
+        prep.filter_invalid_records?.removed != null
+            ? (prep.filter_invalid_records.removed > 0
+                ? `过滤 <strong>${prep.filter_invalid_records.removed.toLocaleString()}</strong> 条无效`
+                : "无无效记录")
+            : "N/A（无数量/价格列）",
+
+        // 5: 异常标记
+        (() => {
+            const flagged = prep.filter_outliers?.flagged;
+            if (flagged == null) return "—";
+            if (flagged === 0) return "无异常值";
+            const detail = prep.filter_outliers?.detail || {};
+            const cols = Object.keys(detail).length;
+            return `标记 <strong>${flagged}</strong> 个，涉及 <strong>${cols}</strong> 列`;
+        })(),
+
+        // 6: 特征工程
+        (() => {
+            const added = prep.add_features?.added || [];
+            if (!added.length) return "无新增特征";
+            return added.map(f => `<span style="display:inline-block;padding:1px 5px;
+                border-radius:3px;background:rgba(0,229,160,0.12);
+                color:var(--green);font-size:0.9em;margin:1px 1px 1px 0">${f}</span>`).join("");
+        })(),
     ];
-    document.getElementById("prep-timeline").innerHTML = steps.map(([name, val]) => `
-        <div class="prep-step">
-            <div class="prep-dot"></div>
-            <span class="prep-step-name">${name}</span>
-            <span class="prep-step-val">${val}</span>
-        </div>
-    `).join("");
+
+    // 填入各步骤统计
+    statTexts.forEach((html, i) => {
+        const el = document.getElementById(`pstat-${i}`);
+        if (!el) return;
+        el.innerHTML = html;
+        el.classList.remove("pstat-pending");
+    });
+
+    // 错落出现动画
+    for (let i = 0; i <= 6; i++) {
+        const step = document.getElementById(`pstep-${i}`);
+        if (!step) continue;
+        setTimeout(() => step.classList.add("active"), i * 100 + 80);
+    }
+
+    // Pipeline 结果条
+    const before = prep.original_rows;
+    const after  = prep.final_rows;
+    if (before != null && after != null) {
+        const bar = document.getElementById("pipeline-result-bar");
+        document.getElementById("pr-before").textContent = before.toLocaleString();
+        document.getElementById("pr-after").textContent  = after.toLocaleString();
+        const delta = before - after;
+        const deltaEl = document.getElementById("pr-delta");
+        if (delta > 0) {
+            deltaEl.innerHTML = `（清洗移除 <strong style="color:#ff9a9a">${delta.toLocaleString()}</strong> 行，保留率 ${(after/before*100).toFixed(1)}%）`;
+        } else {
+            deltaEl.innerHTML = `（所有记录保留）`;
+        }
+        setTimeout(() => { bar.style.display = "flex"; }, 7 * 100 + 200);
+    }
 }
 
 function renderPreviewTable(rows) {
@@ -415,51 +721,99 @@ async function loadPreprocessViz() {
         if (!r.ok) return;
         const viz = await r.json();
 
-        // 清洗前后对比图
-        const baData = viz.before_after || [];
-        if (baData.length > 0) {
-            const steps   = baData.map(d => d.step);
-            const removed = baData.map(d => d.removed || 0);
-            Plotly.newPlot('chart-preprocess-ba', [{
-                type: 'bar', x: steps, y: removed,
-                marker: { color: ['rgba(79,159,255,0.8)', 'rgba(0,212,255,0.8)'] },
-                text: removed.map(v => v > 0 ? v + ' 行' : '无变化'),
-                textposition: 'auto',
+        // ── 行数阶段图（pipeline_stages） ──────────────────
+        const stages = viz.pipeline_stages || [];
+        const baEl   = document.getElementById('chart-preprocess-ba');
+        if (stages.length > 0 && baEl) {
+            const names = stages.map(d => d.stage);
+            const rows  = stages.map(d => d.rows);
+            const maxR  = Math.max(...rows);
+            // 渐变色：按行数保留率着色，越低越偏红
+            const colors = rows.map(v =>
+                v === maxR ? 'rgba(79,159,255,0.85)' :
+                v / maxR > 0.99 ? 'rgba(0,229,160,0.8)' :
+                v / maxR > 0.95 ? 'rgba(245,166,35,0.8)' : 'rgba(255,77,109,0.8)'
+            );
+            Plotly.newPlot(baEl, [{
+                type: 'bar',
+                x: names,
+                y: rows,
+                marker: { color: colors },
+                text: rows.map(v => v.toLocaleString() + ' 行'),
+                textposition: 'outside',
+                textfont: { size: 10, color: 'rgba(255,255,255,0.7)' },
+                cliponaxis: false,
             }], {
-                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-                font: { color: '#fff', size: 11 },
-                margin: { t: 10, b: 30, l: 40, r: 10 },
-                yaxis: { gridcolor: 'rgba(255,255,255,0.08)' },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor:  'transparent',
+                height: 155,
+                font:   { color: '#fff', size: 10 },
+                margin: { t: 28, b: 28, l: 52, r: 10 },
+                yaxis: {
+                    gridcolor:  'rgba(255,255,255,0.06)',
+                    tickformat: ',d',
+                    range: [0, maxR * 1.18],
+                },
+                xaxis: { tickfont: { size: 10 } },
                 showlegend: false,
             }, { responsive: true, displayModeBar: false });
+
+            // 附加：缺失值填充信息（文字）
+            if (viz.cells_filled > 0) {
+                const infoEl = document.createElement('div');
+                infoEl.style.cssText =
+                    'font-size:0.7em;color:rgba(255,255,255,0.35);' +
+                    'text-align:center;margin-top:-4px;padding-bottom:4px';
+                infoEl.innerHTML =
+                    `<i class="bi bi-bandaid me-1" style="color:var(--cyan)"></i>` +
+                    `另填充 <strong style="color:var(--cyan)">${viz.cells_filled.toLocaleString()}</strong> 个缺失单元格`;
+                baEl.appendChild(infoEl);
+            }
         }
 
-        // 缺失率热力图（横向条形图）
-        const missing = (viz.missing_heatmap || []).filter(d => d.missing_count > 0);
-        if (missing.length > 0) {
-            const cols = missing.map(d => d.col);
-            const pcts = missing.map(d => d.missing_pct);
-            Plotly.newPlot('chart-missing-heatmap', [{
+        // ── 各列缺失率横向条形图 ───────────────────────────
+        const missing   = (viz.missing_heatmap || []).filter(d => d.missing_count > 0);
+        const missEl    = document.getElementById('chart-missing-heatmap');
+        if (missing.length > 0 && missEl) {
+            const cols  = missing.map(d => d.col);
+            const pcts  = missing.map(d => d.missing_pct);
+            // 动态左边距：按最长列名估算（每字符约 7px，最小 70，最大 160）
+            const maxLabelLen = Math.max(...cols.map(c => c.length));
+            const marginL     = Math.min(Math.max(maxLabelLen * 7, 70), 160);
+            // 图高：每行 22px，最小 80px，最大 155px（撑满容器）
+            const chartH      = Math.min(Math.max(missing.length * 22 + 30, 80), 155);
+
+            Plotly.newPlot(missEl, [{
                 type: 'bar', orientation: 'h',
-                x: pcts, y: cols,
-                marker: { color: pcts.map(p => p > 10 ? 'rgba(255,76,76,0.8)' : 'rgba(79,255,140,0.8)') },
+                x: pcts,
+                y: cols,
+                marker: { color: pcts.map(p => p > 10 ? 'rgba(255,77,109,0.85)' : 'rgba(79,229,140,0.8)') },
                 text: pcts.map(p => p.toFixed(1) + '%'),
-                textposition: 'auto',
+                textposition: 'outside',
+                textfont: { size: 9, color: 'rgba(255,255,255,0.6)' },
+                cliponaxis: false,
             }], {
-                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-                font: { color: '#fff', size: 10 },
-                margin: { t: 10, b: 20, l: 100, r: 30 },
-                xaxis: { title: '缺失率 (%)', gridcolor: 'rgba(255,255,255,0.08)' },
+                paper_bgcolor: 'transparent',
+                plot_bgcolor:  'transparent',
+                height: chartH,
+                font:   { color: '#fff', size: 10 },
+                margin: { t: 10, b: 24, l: marginL, r: 36 },
+                xaxis: {
+                    title: { text: '缺失率 (%)', font: { size: 9 } },
+                    gridcolor: 'rgba(255,255,255,0.06)',
+                    range: [0, Math.max(...pcts) * 1.3],
+                },
+                yaxis: { tickfont: { size: 9 }, automargin: true },
             }, { responsive: true, displayModeBar: false });
-        } else {
-            // 无缺失值 → 显示绿色提示
-            document.getElementById('chart-missing-heatmap').innerHTML =
-                '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--green)">' +
+        } else if (missEl) {
+            missEl.innerHTML =
+                '<div style="display:flex;align-items:center;justify-content:center;' +
+                'height:100%;color:var(--green);font-size:0.85em">' +
                 '<i class="bi bi-check-circle me-2"></i>所有列均无缺失值</div>';
         }
 
         document.getElementById('preprocess-viz').style.display = '';
-    } catch(e) { /* 静默失败 */ }
+    } catch(e) { console.warn('preprocess viz error:', e); }
 }
 
 // ── 下载清洗后数据 ─────────────────────────────────────────

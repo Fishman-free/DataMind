@@ -1,0 +1,14 @@
+services:
+  datamind:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - AI_API_KEY=${AI_API_KEY}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
+      - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
+      - FLASK_DEBUG=false
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-datamind-prod-secret}
+    volumes:
+      - ./datasets:/app/datasets
+    restart: unless-stopped

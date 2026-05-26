@@ -35,3 +35,14 @@ def test_all_dimension_scores_are_finite_and_in_0_100_range():
         score = float(dim["score"])
         assert math.isfinite(score)
         assert 0 <= score <= 100
+
+
+def test_timeliness_future_date_should_not_show_negative_days():
+    """未来日期不应出现“距今 -N 天”文案，并应保持满分。"""
+    df = pd.DataFrame({"event_time": [pd.Timestamp.now() + pd.Timedelta(days=7)]})
+
+    result = QualityScorer().score(df, df, {"steps": []})
+    timeliness = result["dimensions"]["timeliness"]
+
+    assert timeliness["score"] == 100
+    assert "-" not in timeliness["detail"]

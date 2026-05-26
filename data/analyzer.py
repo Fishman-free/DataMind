@@ -523,30 +523,33 @@ class Analyzer:
 
     def preprocess_visual(self, pp_report: dict) -> dict:
         """
-        生成预处理可视化数据（前后对比 + 缺失值热力图）。
+        生成预处理可视化数据（行数阶段图 + 缺失值热力图）。
 
         Returns:
           {
-            "before_after": [{"step": str, "before": int, "after": int, "removed": int}],
+            "pipeline_stages": [{"stage": str, "rows": int, "label": str}],
+            "cells_filled": int,
             "missing_heatmap": [{"col": str, "missing_count": int, "missing_pct": float}]
           }
         """
-        rows_orig = len(self.df) + pp_report.get("duplicates_removed", 0)
-        rows_clean = len(self.df)
+        # ── 使用正确的 key 路径读取 pp_report ───────────────
+        dup  = pp_report.get("remove_duplicates") or {}
+        inv  = pp_report.get("filter_invalid_records") or {}
+        miss = pp_report.get("handle_missing") or {}
 
-        before_after = [
-            {
-                "step":    "去重",
-                "before":  rows_orig,
-                "after":   rows_clean,
-                "removed": pp_report.get("duplicates_removed", 0),
-            },
-            {
-                "step":    "缺失值处理",
-                "before":  pp_report.get("missing_filled", 0) + pp_report.get("missing_dropped_cols", 0),
-                "after":   0,
-                "removed": pp_report.get("missing_filled", 0),
-            },
+        dup_removed = int(dup.get("removed", 0))
+        inv_removed = int(inv.get("removed", 0))
+        cells_filled = int(sum((miss.get("filled_cols") or {}).values()))
+
+        rows_final     = len(self.df)
+        rows_after_inv = rows_final + inv_removed
+        rows_orig      = rows_after_inv + dup_removed
+
+        # 各阶段行数（展示 Pipeline 中行数的变化趋势）
+        pipeline_stages = [
+            {"stage": "原始数据",  "rows": rows_orig,      "label": f"{rows_orig:,}"},
+            {"stage": "去重后",    "rows": rows_after_inv,  "label": f"-{dup_removed:,}" if dup_removed else "无变化"},
+            {"stage": "无效过滤后","rows": rows_final,      "label": f"-{inv_removed:,}" if inv_removed else "无变化"},
         ]
 
         missing_heatmap = []
@@ -559,6 +562,7 @@ class Analyzer:
             })
 
         return {
-            "before_after":    before_after,
+            "pipeline_stages": pipeline_stages,
+            "cells_filled":    cells_filled,
             "missing_heatmap": missing_heatmap,
         }

@@ -2,6 +2,8 @@
 智能分析计划生成器。
 分析数据集 Schema 和洞察结果，自动生成结构化的分析任务清单。
 AI 不可用时使用规则引擎降级生成基础计划。
+
+来源：学生+AI
 """
 from __future__ import annotations
 

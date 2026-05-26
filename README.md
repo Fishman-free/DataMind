@@ -203,7 +203,32 @@ report_agents.py
 
 > 核心设计哲学：**「AI enhanced, not AI dependent」**——AI 是提升体验的加速器，不是系统的单点故障源。
 
-### 8. SSE 前端工程化 — `sse-handler.js`
+### 8. 全数据集自适应引擎 — DataProfiler + 智能路由
+
+DataMind 能识别 **6 种数据画像**，并为每种类型自动选择最合适的分析路径：
+
+| 画像 | 识别规则 | 自适应内容 |
+|------|---------|-----------|
+| 零售型 (`retail`) | 含日期 + 客户 + 商品/金额列 | 月度趋势、Top 商品、RFM 分析、国家分布 |
+| 时序型 (`temporal`) | 含日期列 + 数值列 | 时间趋势折线、数值分布、相关矩阵 |
+| 数值型 (`numeric`) | 数值列 ≥ 4，分类列 ≤ 2 | 分布直方图、散点对、箱线图、相关矩阵 |
+| 分类型 (`categorical`) | 分类列 ≥ 3 | 多列频次柱状图、交叉分析 |
+| 地理型 (`geographic`) | 含国家/城市/省份列 | 地区分布、数值对比 |
+| 混合型 (`mixed`) | 其余 | 通用图表组合 |
+
+**自适应路由体现在 3 处：**
+1. **快捷提问按钮** — 基于画像生成 4 条专属问题（而非固定模板）
+2. **自适应仪表盘** — 6 个图表按画像动态切换；纯分类数据无数值列时全部替换为频次图
+3. **系统提示词** — AI 获取当前数据集的精确列名和样本值，宽数据集（>25 列）自动截断防超限
+
+**通用性保障：**
+- 任意类型数据进入系统后，质量评分卡、智能问答、可视化仪表盘、报告、叙事功能均可正常使用
+- 纯分类数据（无数值列）不会出现空白图表卡片，自动切换为类别频次柱状图
+- 宽列数据集（100+ 列）系统提示词展示前 25 列 + 说明总数，避免 token 超限
+
+---
+
+### 9. SSE 前端工程化 — `sse-handler.js`
 
 不依赖第三方库，约 200 行纯 JavaScript 实现的 SSE 客户端基础设施：
 
@@ -567,15 +592,19 @@ python app.py
 
 系统对数据执行 5 步 Pipeline 清洗，并逐步骤展示报告：
 
-| 步骤 | 内容 |
-|------|------|
-| 1. 去重 | 移除完全重复的行，显示移除数量 |
-| 2. **文本清洗** 🆕 | 自动去除所有文本列的首尾空白符和 ASCII 控制字符，避免错误分组 |
-| 3. **智能缺失值填充** 🆕 | 数值列：偏态系数 \|skew\| > 1.0 → 中位数，否则 → 均值；文本列：低基数分类列（唯一值 ≤ 10）→ 众数，否则 → "Unknown" |
-| 4. 类型转换 | 字符串 → 数值 / 日期类型 / **低基数列自动转 Categorical** 🆕 |
-| 5. 无效记录过滤 | 删除数量 ≤ 0 或单价 < 0 的行（适用电商场景） |
-| 6. **两档 IQR 异常标记** 🆕 | 轻度异常（×1.5）→ `_is_outlier`；极端异常（×3.0）→ `_is_extreme_outlier`，不删除行 |
-| 特征工程 | 自动新增 TotalAmount、Hour、DayOfWeek 等派生字段 |
+数据概览页展示 **7 步链式预处理 Pipeline** 的执行结果（可视化流程图，带实时统计）：
+
+| 步骤 | 方法 | 内容 |
+|------|------|------|
+| **01 去重** | `drop_duplicates()` | 全行精确匹配去重，显示移除数量 |
+| **02 文本清洗** | `.str.strip()` + 正则 | 去除所有文本列首尾空白符和 ASCII 控制字符（0x00–0x1f/0x7f） |
+| **03 缺失值处理** | 偏态感知填充 | 数值列：`\|skew\| > 1.0` → 中位数，否则 → 均值；文本列：低基数（唯一值 ≤ 10，唯一率 ≤ 50%）→ 众数，否则 → "Unknown" |
+| **04 类型转换** | 启发式检测 | 字符串 → datetime（前20行成功率 >70%）→ numeric → category（低基数列自动分类化） |
+| **05 无效过滤** | 业务规则 | 删除 Quantity ≤ 0（退货/取消）或 UnitPrice < 0（错误定价）的行，跳过无相关列的数据集 |
+| **06 异常标记** | 双档 IQR 法 | 轻度（×1.5）→ `_is_outlier`；极端（×3.0）→ `_is_extreme_outlier`，仅标记不删除，供下游决策 |
+| **07 特征工程** | 派生特征 | 检测到日期列 → 生成 Year / Month / DayOfWeek / Hour；检测到数量+单价列 → 生成 TotalAmount |
+
+> **Pipeline 实现**：`data/preprocessor.py` — `Preprocessor` 类，链式调用 `remove_duplicates().clean_text().handle_missing().convert_types().filter_invalid_records().filter_outliers().add_features()`
 
 **④ 数据预览**
 
@@ -1124,7 +1153,7 @@ data: [DONE]\n\n
 ### 运行测试
 
 ```bash
-# 运行全部测试（247 个用例）
+# 运行全部测试（276 个用例）
 python -m pytest tests/ -v
 
 # 只运行特定模块
@@ -1152,8 +1181,9 @@ python -m pytest tests/ -q
 | test_plan_generator.py 🆕 | ai/plan_generator.py | ~10 |
 | test_storyteller.py 🆕 | ai/storyteller.py | ~10 |
 | test_quality_scorer.py 🆕 | data/quality_scorer.py | ~15 |
+| test_quality_timeliness.py 🆕 | data/quality_scorer.py（时效性专项） | 3 |
 | test_api.py | routes/api.py（含 SSE/新端点） | ~43 |
-| **合计** | | **~247** |
+| **合计** | | **276** |
 
 > 所有测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。SSE 响应测试验证流式格式和事件类型完整性。
 
@@ -1166,6 +1196,7 @@ python -m pytest tests/ -q
 | **v1.0** | 2026-05 初 | 数据上传→自动清洗→规则洞察→自然语言问答→交互图表→一键报告 |
 | **v2.0** | 2026-05 中 | 上线专家模式：多 Agent 协作框架（StatisticsAgent/InsightAgent/QAAgent/SynthesisAgent），深度报告模式，增强数据预处理（文本清洗/智能缺失值填充/两档 IQR 异常标记/特征工程），Ollama 本地免费部署支持 |
 | **v3.0** | 2026-05 末 | SSE 流式响应底座（问答+报告流式推送），NL2Vis 图表工作台（自然语言→Plotly 交互图表），数据质量评分卡（5 维度加权评分），智能分析计划生成器，数据叙事引擎，测试覆盖扩至 247 用例 |
+| **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 276 用例 |
 
 ---
 

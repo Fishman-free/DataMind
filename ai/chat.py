@@ -51,13 +51,26 @@ class ChatSession:
         mode_name  = self.df_summary.get("profile_mode_name", "数据集")
 
         # 构建完整列信息表（用于语义映射）
+        # 对宽数据集（>25列）智能截断：优先保留数值列 + 分类列 + 时间列，
+        # 防止 prompt 过长导致 token 超限或 AI 注意力分散。
         col_info: dict = self.df_summary.get("col_info", {})
         if col_info:
             col_lines = []
-            for col_name, info in col_info.items():
+            MAX_COLS_IN_PROMPT = 25
+            items = list(col_info.items())
+            if len(items) > MAX_COLS_IN_PROMPT:
+                # 截断策略：保留前 25 列，附加说明
+                items = items[:MAX_COLS_IN_PROMPT]
+                truncated = True
+            else:
+                truncated = False
+            for col_name, info in items:
                 samples_str = ", ".join(info.get("samples", [])[:3])
                 col_lines.append(f"  - {col_name} ({info.get('dtype','')})：样本值 [{samples_str}]")
             col_table = "\n".join(col_lines)
+            if truncated:
+                total = self.df_summary.get("column_count", "?")
+                col_table += f"\n  （共 {total} 列，此处仅列出前 {MAX_COLS_IN_PROMPT} 列，其余可通过 df.columns 查询）"
         else:
             # 降级：只展示数值列
             num_cols = list(self.df_summary.get("numeric_stats", {}).keys())
@@ -85,9 +98,27 @@ class ChatSession:
    chart = fig
    result = df.groupby('colA')['colB'].sum()
    ```
-5. 代码放在 ```python ... ``` 块中，自然语言解释放在代码块外
-6. 代码执行完毕后，用自然语言解释结论（如"根据分析，alcohol 均值为 10.4，质量评分与酒精浓度相关系数为 0.48"）
-7. 如需输出中间信息请使用 print()，语言优先中文"""
+5. 生成散点图时，务必设置可见的 marker：
+   ```python
+   fig = px.scatter(df, x='colA', y='colB', title='标题',
+                    opacity=0.7, color_discrete_sequence=['#00e5ff'])
+   # 或使用 go：
+   fig = go.Figure(go.Scatter(x=df['colA'], y=df['colB'],
+                              mode='markers',
+                              marker=dict(color='rgba(0,229,255,0.7)', size=6)))
+   chart = fig
+   ```
+6. 纯分类数据分析时优先使用频次统计和柱状图：
+   ```python
+   vc = df['colA'].value_counts().reset_index()
+   vc.columns = ['类别', '数量']
+   fig = px.bar(vc, x='类别', y='数量', title='colA 频次分布')
+   chart = fig
+   result = vc
+   ```
+7. 代码放在 ```python ... ``` 块中，自然语言解释放在代码块外
+8. 代码执行完毕后，用自然语言解释结论
+9. 如需输出中间信息请使用 print()，语言优先中文"""
 
     # ── 消息管理 ────────────────────────────────────────
 

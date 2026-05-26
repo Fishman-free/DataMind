@@ -59,8 +59,17 @@ def test_box_plots(num_df):
 
 def test_preprocess_visual_no_crash(num_df):
     az = Analyzer(num_df)
-    pp_report = {"duplicates_removed": 5, "missing_filled": 2,
-                 "missing_dropped_cols": 0, "outliers_flagged": 3}
+    # 使用新格式的 pp_report（嵌套 key 结构）
+    pp_report = {
+        "remove_duplicates":       {"removed": 5, "before": 105, "after": 100},
+        "handle_missing":          {"filled_cols": {"a": 2}, "high_missing_cols": []},
+        "filter_invalid_records":  {"removed": 0, "before": 100, "after": 100},
+    }
     result = az.preprocess_visual(pp_report)
-    assert "before_after" in result
+    assert "pipeline_stages" in result
     assert "missing_heatmap" in result
+    assert "cells_filled" in result
+    # 验证 pipeline_stages 包含 3 个阶段
+    assert len(result["pipeline_stages"]) == 3
+    # 验证 cells_filled 正确（a 列填充 2 个）
+    assert result["cells_filled"] == 2

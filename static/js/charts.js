@@ -51,13 +51,17 @@ function _ensureVisibleAndRender(el, renderFn) {
         setTimeout(function () {
             try {
                 renderFn();
+                // 双重 resize：立即 + 300ms 后，确保布局稳定后图表尺寸正确
                 _safeResize(el);
+                setTimeout(function () { _safeResize(el); }, 300);
             } catch (_) {}
         }, 80);
         return;
     }
     renderFn();
+    // 渲染后 300ms 触发一次 resize，保证容器尺寸已稳定
     _safeResize(el);
+    setTimeout(function () { _safeResize(el); }, 300);
 }
 
 function _bindAdaptiveResizeGuard() {
@@ -459,6 +463,13 @@ function _renderChartSlot(index, cfg) {
         container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:rgba(255,255,255,0.3);font-size:0.85em"><i class="bi bi-dash-circle me-2"></i>当前数据集无此维度</div>';
         return;
     }
+
+    // 重置 placeholder 的 flex 居中样式，防止 Plotly 图表无法撑满容器
+    container.style.display = 'block';
+    container.style.alignItems = '';
+    container.style.justifyContent = '';
+    container.style.color = '';
+    container.innerHTML = '';
 
     const layout_base = {
         paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',

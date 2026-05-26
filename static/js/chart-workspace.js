@@ -144,6 +144,11 @@ function renderChart(chartData) {
             traces = chartData ? [chartData] : [];
             layout = {};
         }
+        // 剥离嵌入的 plotly 模板（防止 plotly_dark 模板覆盖透明背景），
+        // 强制透明背景确保 scatter 等图表在暗色页面中正确显示。
+        layout = _cleanChartLayout(layout);
+        // 确保散点/折线等 trace 的 marker 可见性
+        traces = _ensureMarkerVisibility(traces);
         Plotly.react(container, traces, layout, {
             responsive: true,
             displayModeBar: true,
@@ -152,6 +157,45 @@ function renderChart(chartData) {
     } catch (e) {
         console.error('工作台图表渲染失败:', e);
     }
+}
+
+/**
+ * 清理图表 layout：剥离嵌入的 template 对象，强制透明背景。
+ * @param {object} layout - Plotly layout
+ * @returns {object} 清理后的 layout
+ */
+function _cleanChartLayout(layout) {
+    var cleaned = Object.assign({}, layout);
+    // 移除 plotly 内嵌模板对象（可能覆盖背景色导致图表元素不可见）
+    delete cleaned.template;
+    // 强制透明背景以适配深色页面
+    cleaned.paper_bgcolor = 'rgba(0,0,0,0)';
+    cleaned.plot_bgcolor  = 'rgba(0,0,0,0)';
+    return cleaned;
+}
+
+/**
+ * 确保散点/折线图的 marker 有足够的可见性（大小 >= 5，不透明度 >= 0.7）。
+ * @param {Array} traces - Plotly traces 数组
+ * @returns {Array} 处理后的 traces
+ */
+function _ensureMarkerVisibility(traces) {
+    if (!Array.isArray(traces)) return traces;
+    return traces.map(function (trace) {
+        if (!trace) return trace;
+        var t = Object.assign({}, trace);
+        if (t.type === 'scatter' || t.type === 'scattergl') {
+            // 先继承原有 marker，再强制覆盖不可见项（避免 Object.assign 顺序导致默认被覆盖）
+            var marker = Object.assign({}, t.marker || {});
+            if (!Array.isArray(marker.color) && !marker.color) {
+                marker.color = 'rgba(0,229,255,0.75)';
+            }
+            if (!marker.size || marker.size < 5) marker.size = 6;
+            if (!marker.opacity || marker.opacity < 0.3) marker.opacity = 0.85;
+            t.marker = marker;
+        }
+        return t;
+    });
 }
 
 /**
@@ -174,12 +218,15 @@ function copyChartCode() {
  */
 function downloadChartPNG() {
     var container = document.getElementById('chart-plot-area');
-    if (typeof Plotly !== 'undefined') {
-        Plotly.downloadImage(container, {
-            format: 'png',
-            width: 1200,
-            height: 800,
-            filename: 'datamind_chart',
-        });
-    }
+    if (!container || typeof Plotly === 'undefined') return;
+    // 使用容器实际尺寸 × 2（Retina 级别输出），最小保证 800×500
+    var w = Math.max(container.offsetWidth  || 0, 800);
+    var h = Math.max(container.offsetHeight || 0, 500);
+    Plotly.downloadImage(container, {
+        format: 'png',
+        width:  w,
+        height: h,
+        scale:  2,         // 2× 像素密度，导出高清图
+        filename: 'datamind_chart',
+    });
 }

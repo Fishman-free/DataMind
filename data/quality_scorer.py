@@ -168,6 +168,9 @@ class QualityScorer:
         else:
             now_ts = pd.Timestamp.now()
         days_ago = (now_ts - latest_ts).days
+        # 未来日期（days_ago < 0）视为最新数据，满分且不输出负数
+        if days_ago < 0:
+            return self._build_dimension("timeliness", 100, "数据为最新（含未来日期）")
 
         if days_ago <= 7:
             score = 100

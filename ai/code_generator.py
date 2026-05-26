@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import base64
 import io
 import json
 import re
@@ -130,9 +131,27 @@ class CodeGenerator:
                     exec(textwrap.dedent(code), namespace)  # noqa: S102
                 raw = namespace.get("result")
                 chart = namespace.get("chart")
-                # 如果 chart 是 plotly Figure 对象，转为可序列化的 JSON dict
-                if chart is not None and hasattr(chart, "to_plotly_json"):
-                    chart = chart.to_plotly_json()
+                # 将 plotly Figure 对象转为纯 JSON 可序列化的 dict。
+                #
+                # 注意：plotly 5.x 的 to_json() 对 numpy 数组使用 Base64 二进制编码
+                #   {"dtype": "i1", "bdata": "AQIDBAUGBwg..."}
+                # 这种格式需要 Plotly.js >= 2.12 才能解码，旧版浏览器会把 x/y 当空对象
+                # 导致散点图显示空白坐标轴（-1~6, -1~4 等默认空图 range）。
+                #
+                # 正确方案：to_dict() + 递归 numpy→list 转换，跳过二进制编码路径。
+                if chart is not None:
+                    if hasattr(chart, "to_dict"):
+                        chart = _plotly_fig_to_dict(chart)
+                    elif hasattr(chart, "to_plotly_json"):
+                        # 兜底：to_plotly_json 仍可能含 ndarray，用 json roundtrip 处理
+                        chart = json.loads(
+                            json.dumps(chart.to_plotly_json(), default=_json_serial)
+                        )
+                    # 剥离嵌入的 plotly_dark 模板并强制透明背景
+                    if isinstance(chart, dict) and isinstance(chart.get("layout"), dict):
+                        chart["layout"].pop("template", None)
+                        chart["layout"]["paper_bgcolor"] = "rgba(0,0,0,0)"
+                        chart["layout"]["plot_bgcolor"]  = "rgba(0,0,0,0)"
                 result_val = _serialize(raw)
                 stdout_text = stdout_buf.getvalue().strip()
                 result_holder["result"] = {
@@ -277,6 +296,60 @@ _IMPORT_RE = re.compile(
     r"^\s*(import\s+\S.*|from\s+\S+\s+import\s+.*)$",
     re.MULTILINE,
 )
+
+
+def _json_serial(obj: Any) -> Any:
+    """json.dumps default 回调：将 numpy 类型转为 Python 原生类型。"""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
+def _decode_plotly_bdata(obj: Any) -> Any:
+    """
+    递归解码 plotly 5.x 的 Base64 二进制数组编码。
+
+    plotly 5.x 将 numpy 数组序列化为 {"dtype": "f8", "bdata": "<base64>"} 格式，
+    而非普通 JSON 数组。Plotly.js 旧版本不支持此格式，导致 x/y 被当作空对象，
+    散点图显示为无数据的空坐标轴（range: -1~6 等默认值）。
+
+    本函数将所有 {dtype, bdata} 对象解码为 Python list，确保跨版本兼容。
+    """
+    if isinstance(obj, dict):
+        # plotly binary-encoded array 特征：同时含 'dtype' 和 'bdata'
+        if "bdata" in obj and "dtype" in obj:
+            raw_bytes = base64.b64decode(obj["bdata"])
+            arr = np.frombuffer(raw_bytes, dtype=np.dtype(obj["dtype"]))
+            return arr.tolist()
+        return {k: _decode_plotly_bdata(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_decode_plotly_bdata(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    return obj
+
+
+def _plotly_fig_to_dict(fig: Any) -> dict:
+    """
+    将 plotly Figure 转为纯 JSON 可序列化的 Python dict。
+
+    关键点：plotly 5.x 的 to_dict() 对 numpy 数组使用 Base64 二进制编码
+    {"dtype": "i1", "bdata": "AQIDBAUGBw..."}，而非普通 JSON 数组。
+    旧版 Plotly.js 把 x/y 当空对象处理 → 散点图空白。
+
+    本函数通过 _decode_plotly_bdata 递归解码所有 binary 字段，
+    返回完全由 Python 原生类型组成的 dict。
+    """
+    raw = fig.to_dict()
+    return _decode_plotly_bdata(raw)
 
 
 def _sanitize_code(code: str) -> str:

@@ -385,7 +385,10 @@ def adaptive_charts():
     target_col       = profile.get("target_col")
     date_col         = profile.get("date_col")
 
-    # 图表1：时序折线 or 数值分布
+    # 纯分类型数据（无数值列）：全部使用类别分布图
+    has_numeric = len(numeric_cols) >= 1
+
+    # 图表1：时序折线 or 数值分布 or 类别频次
     if mode == "temporal" and date_col:
         try:
             charts.append({
@@ -393,23 +396,34 @@ def adaptive_charts():
                 "data": az.sales_trend(), "source": "temporal"
             })
         except Exception:
-            charts.append(_make_hist_chart(az, numeric_cols))
-    else:
+            charts.append(_make_hist_chart(az, numeric_cols) if has_numeric
+                          else _make_cat_chart(az, categorical_cols))
+    elif has_numeric:
         charts.append(_make_hist_chart(az, numeric_cols))
+    else:
+        charts.append(_make_cat_chart(az, categorical_cols))
 
-    # 图表2：相关性矩阵
-    try:
-        charts.append({
-            "type": "heatmap", "title": "相关性矩阵",
-            "data": az.correlation_matrix(), "source": "generic"
-        })
-    except Exception:
-        charts.append({"type": "heatmap", "title": "相关性矩阵", "data": None})
+    # 图表2：相关性矩阵（无数值列时改为第二个类别列频次）
+    if has_numeric and len(numeric_cols) >= 2:
+        try:
+            charts.append({
+                "type": "heatmap", "title": "相关性矩阵",
+                "data": az.correlation_matrix(), "source": "generic"
+            })
+        except Exception:
+            charts.append({"type": "heatmap", "title": "相关性矩阵", "data": None})
+    else:
+        charts.append(_make_cat_chart(az, categorical_cols[1:] if len(categorical_cols) > 1
+                                      else categorical_cols))
 
-    # 图表3：箱线图
-    box_data = az.box_plots(max_cols=6)
-    charts.append({"type": "box", "title": "数值列分布箱线图",
-                   "data": box_data, "source": "generic"})
+    # 图表3：箱线图（无数值列时改为类别频次）
+    if not has_numeric:
+        charts.append(_make_cat_chart(az, categorical_cols[2:] if len(categorical_cols) > 2
+                                      else categorical_cols))
+    else:
+        box_data = az.box_plots(max_cols=6)
+        charts.append({"type": "box", "title": "数值列分布箱线图",
+                       "data": box_data, "source": "generic"})
 
     # 图表4：散点图 or 类别频次
     if len(numeric_cols) >= 2:
@@ -445,10 +459,10 @@ def adaptive_charts():
     else:
         charts.append(_make_hist_chart(az, numeric_cols, offset=1))
 
-    # 图表6：预处理前后对比
+    # 图表6：预处理行数阶段对比
     viz = az.preprocess_visual(pp_report)
-    charts.append({"type": "bar_grouped", "title": "数据清洗前后对比",
-                   "data": viz["before_after"], "source": "preprocess"})
+    charts.append({"type": "bar_grouped", "title": "数据清洗行数变化",
+                   "data": viz.get("pipeline_stages", []), "source": "preprocess"})
 
     return jsonify(charts)
 
@@ -749,11 +763,16 @@ def chat_reset():
 
 # ── AI 配置接口 ───────────────────────────────────────────────
 
-def _init_ai_client(api_key: str, base_url: str) -> Any:
+def _init_ai_client(api_key: str, base_url: str, model: str = "") -> Any:
     """
-    用给定的 api_key / base_url 创建 OpenAI 兼容客户端。
-    所有支持 OpenAI 接口格式的服务商（包括国内中转站）均可复用。
+    按模型名自动选择 SDK：
+    - claude-* 模型 → AnthropicAdapter（Anthropic 原生格式，兼容中转站）
+    - 其他模型      → openai.OpenAI（OpenAI 兼容格式）
+    两种客户端对外均暴露 client.chat.completions.create() 接口。
     """
+    if model.lower().startswith("claude"):
+        from ai.anthropic_adapter import AnthropicAdapter
+        return AnthropicAdapter(api_key=api_key, base_url=base_url)
     from openai import OpenAI
     return OpenAI(api_key=api_key, base_url=base_url)
 
@@ -772,7 +791,7 @@ def _apply_ai_config(api_key: str, base_url: str, model: str) -> None:
     _cfg.OPENAI_MODEL   = model
 
     state  = _state()
-    client = _init_ai_client(api_key, base_url)
+    client = _init_ai_client(api_key, base_url, model)
     state["openai_client"]    = client
     state["code_generator"]   = CodeGenerator(client)
     state["report_generator"] = ReportGenerator(client)
@@ -860,7 +879,7 @@ def test_ai_config():
         return jsonify({"status": "error", "error": "请先填写 API Key"}), 400
 
     try:
-        client = _init_ai_client(api_key, base_url)
+        client = _init_ai_client(api_key, base_url, model)
         t0 = time.time()
         resp = client.chat.completions.create(
             model=model,

@@ -454,7 +454,7 @@ function renderQualityScore(data) {
             var name = dimNames[key] || key;
             var dimScore = _safePct(dim.score);
             var barColor = dimScore >= 80 ? 'var(--green)' :
-                           dimScore >= 60 ? 'var(--yellow)' : 'var(--red)';
+                           dimScore >= 60 ? 'var(--amber)' : 'var(--red)';
             html += '<div class="quality-dim-item">' +
                 '<div class="quality-dim-label">' +
                     '<span>' + name + '</span>' +
@@ -474,7 +474,7 @@ function renderQualityScore(data) {
     if (sugContainer && data.suggestions) {
         sugContainer.innerHTML = data.suggestions.map(function (s) {
             return '<div class="quality-suggestion-item">' +
-                '<i class="bi bi-exclamation-triangle me-2" style="color:var(--yellow)"></i>' +
+                '<i class="bi bi-exclamation-triangle me-2" style="color:var(--amber)"></i>' +
                 s + '</div>';
         }).join('');
     }

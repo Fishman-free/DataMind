@@ -150,21 +150,36 @@ class DataProfiler:
                     "各国家销售额占比如何？", "画一个月度销售趋势折线图"]
 
         if mode == "temporal" and date_col:
-            qs.append(f"按 {date_col} 展示数值趋势")
+            qs.append(f"按 {date_col} 展示数值趋势折线图")
+            if numeric_cols:
+                qs.append(f"{numeric_cols[0]} 随时间的变化趋势是什么？")
 
         if target_col and numeric_cols:
             qs.append(f"哪些特征与 {target_col} 相关性最高？")
 
-        if numeric_cols:
+        if len(numeric_cols) >= 2:
+            qs.append(f"画 {numeric_cols[0]} 和 {numeric_cols[1]} 的散点图")
+        elif numeric_cols:
             qs.append(f"{numeric_cols[0]} 列的分布情况如何？")
-            if len(numeric_cols) >= 2:
-                qs.append(f"画 {numeric_cols[0]} 和 {numeric_cols[1]} 的散点图")
 
         if categorical_cols:
             qs.append(f"{categorical_cols[0]} 列的频次分布是什么？")
+            if len(categorical_cols) >= 2:
+                qs.append(f"{categorical_cols[0]} 和 {categorical_cols[1]} 的交叉分析结果如何？")
+
+        if mode == "categorical" and categorical_cols:
+            if len(qs) < 2:
+                qs.insert(0, f"各 {categorical_cols[0]} 类别的数量占比如何？")
+            if len(qs) < 3 and len(categorical_cols) >= 2:
+                qs.insert(1, f"画 {categorical_cols[0]} 频次柱状图")
+
+        if mode == "geographic":
+            qs.append("各地区/国家的数据分布有什么差异？")
 
         if len(qs) < 4 and numeric_cols:
             qs.append("哪些列存在异常值？")
+        if len(qs) < 4:
+            qs.append("数据集有哪些主要特征和统计规律？")
 
         return qs[:4]
 
