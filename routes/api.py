@@ -36,6 +36,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 import config
 from data.loader import UnsupportedFormatError, load_file
 from data.preprocessor import Preprocessor
+from data.preprocess_visualizer import PreprocessVisualizer
 from data.analyzer import Analyzer
 from data.detector import Detector
 from ai.chat import ChatSession
@@ -393,7 +394,8 @@ def adaptive_charts():
         try:
             charts.append({
                 "type": "line", "title": f"{date_col} 时间趋势",
-                "data": az.sales_trend(), "source": "temporal"
+                "data": az.sales_trend(), "source": "temporal",
+                "x_label": "日期", "y_label": "数值"
             })
         except Exception:
             charts.append(_make_hist_chart(az, numeric_cols) if has_numeric
@@ -408,10 +410,12 @@ def adaptive_charts():
         try:
             charts.append({
                 "type": "heatmap", "title": "相关性矩阵",
-                "data": az.correlation_matrix(), "source": "generic"
+                "data": az.correlation_matrix(), "source": "generic",
+                "x_label": "列名", "y_label": "列名"
             })
         except Exception:
-            charts.append({"type": "heatmap", "title": "相关性矩阵", "data": None})
+            charts.append({"type": "heatmap", "title": "相关性矩阵", "data": None,
+                           "x_label": "列名", "y_label": "列名"})
     else:
         charts.append(_make_cat_chart(az, categorical_cols[1:] if len(categorical_cols) > 1
                                       else categorical_cols))
@@ -423,7 +427,8 @@ def adaptive_charts():
     else:
         box_data = az.box_plots(max_cols=6)
         charts.append({"type": "box", "title": "数值列分布箱线图",
-                       "data": box_data, "source": "generic"})
+                       "data": box_data, "source": "generic",
+                       "x_label": "列名", "y_label": "数值"})
 
     # 图表4：散点图 or 类别频次
     if len(numeric_cols) >= 2:
@@ -433,7 +438,8 @@ def adaptive_charts():
             charts.append({
                 "type": "scatter",
                 "title": f"{pair['x_col']} vs {pair['y_col']}（相关系数 {pair['corr']:.2f}）",
-                "data": scatter_data, "source": "generic"
+                "data": scatter_data, "source": "generic",
+                "x_label": pair["x_col"], "y_label": pair["y_col"]
             })
         else:
             charts.append(_make_cat_chart(az, categorical_cols))
@@ -450,7 +456,8 @@ def adaptive_charts():
                 "data": {"labels": [str(x) for x in vc.index.tolist()],
                          "counts": [int(x) for x in vc.values.tolist()],
                          "col": target_col},
-                "source": "generic"
+                "source": "generic",
+                "x_label": target_col, "y_label": "频次"
             })
         except Exception:
             charts.append(_make_cat_chart(az, categorical_cols))
@@ -462,7 +469,8 @@ def adaptive_charts():
     # 图表6：预处理行数阶段对比
     viz = az.preprocess_visual(pp_report)
     charts.append({"type": "bar_grouped", "title": "数据清洗行数变化",
-                   "data": viz.get("pipeline_stages", []), "source": "preprocess"})
+                   "data": viz.get("pipeline_stages", []), "source": "preprocess",
+                   "x_label": "行数", "y_label": "处理阶段"})
 
     return jsonify(charts)
 
@@ -473,9 +481,11 @@ def _make_hist_chart(az, numeric_cols: list, offset: int = 0) -> dict:
         data = az.numeric_distributions(max_cols=6)
         if offset and len(data) > offset:
             data = data[offset:]
-        return {"type": "histogram", "title": "数值列分布", "data": data, "source": "generic"}
+        return {"type": "histogram", "title": "数值列分布", "data": data,
+                "source": "generic", "x_label": "数值区间", "y_label": "频次"}
     except Exception:
-        return {"type": "histogram", "title": "数值列分布", "data": [], "source": "generic"}
+        return {"type": "histogram", "title": "数值列分布", "data": [],
+                "source": "generic", "x_label": "数值区间", "y_label": "频次"}
 
 
 def _make_cat_chart(az, categorical_cols: list) -> dict:
@@ -484,9 +494,11 @@ def _make_cat_chart(az, categorical_cols: list) -> dict:
         data = az.category_distributions(max_cols=1)
         col  = data[0]["col"] if data else "分类列"
         return {"type": "bar", "title": f"{col} 频次分布",
-                "data": data[0] if data else {}, "source": "generic"}
+                "data": data[0] if data else {}, "source": "generic",
+                "x_label": col, "y_label": "频次"}
     except Exception:
-        return {"type": "bar", "title": "分类频次", "data": {}, "source": "generic"}
+        return {"type": "bar", "title": "分类频次", "data": {},
+                "source": "generic", "x_label": "类别", "y_label": "频次"}
 
 
 @api_bp.route("/analysis/suggested_questions")
@@ -536,6 +548,22 @@ def preprocess_visual_api():
     az        = state["analyzer"]
     pp_report = state.get("preprocess_report", {})
     return jsonify(az.preprocess_visual(pp_report))
+
+
+@api_bp.route("/analysis/preprocess_charts")
+def preprocess_charts_api():
+    """返回 seaborn+matplotlib 生成的预处理诊断图（base64 PNG）。"""
+    err = _require_data()
+    if err:
+        return err
+    state     = _state()
+    df_raw    = state.get("df_raw")
+    df_clean  = state["df_clean"]
+    pp_report = state.get("preprocess_report", {})
+    if df_raw is None:
+        df_raw = df_clean
+    viz = PreprocessVisualizer(df_raw, df_clean, pp_report)
+    return jsonify(viz.generate_all())
 
 
 # ── 图表生成接口 ──────────────────────────────────────────────
