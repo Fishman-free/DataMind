@@ -8,3 +8,5 @@ openpyxl>=3.1
 python-calamine>=0.1
 markdown>=3.5
 pytest>=7.0
+matplotlib>=3.7
+seaborn>=0.13
