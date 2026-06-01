@@ -481,6 +481,21 @@ function _renderChartSlot(index, cfg) {
     };
     const opts = { responsive: true, displayModeBar: false };
 
+    // 将后端传来的 x_label / y_label / title 合并进 layout_base
+    if (cfg.x_label) {
+        layout_base.xaxis = Object.assign({}, layout_base.xaxis,
+            { title: { text: cfg.x_label, font: { color: '#8899B8', size: 10 } } });
+    }
+    if (cfg.y_label) {
+        layout_base.yaxis = Object.assign({}, layout_base.yaxis,
+            { title: { text: cfg.y_label, font: { color: '#8899B8', size: 10 } } });
+    }
+    if (cfg.title) {
+        layout_base.title = { text: cfg.title,
+            font: { color: '#8899B8', size: 12 }, x: 0.02 };
+        layout_base.margin = Object.assign({}, layout_base.margin, { t: 36 });
+    }
+
     try {
         _ensureVisibleAndRender(container, function () {
             switch (cfg.type) {
