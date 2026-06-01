@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+<!-- 来源：学生+AI -->
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-4">
     <div class="d-flex align-items-center gap-3">
@@ -19,6 +20,48 @@
     <i class="bi bi-info-circle me-2"></i>请先上传数据文件
 </div>
 
+<!-- 预处理报告折叠面板 -->
+<div id="prep-section" style="display:none" class="mb-4">
+    <div class="accordion" id="prepAccordion">
+        <div class="accordion-item"
+             style="background:#0d1117;border:1px solid #1e3a5f;border-radius:8px">
+            <h2 class="accordion-header" id="prepHeading">
+                <button class="accordion-button collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#prepPanel"
+                        aria-expanded="false"
+                        aria-controls="prepPanel"
+                        style="background:#0d1117;color:#c9d1d9;border-radius:8px;
+                               font-size:0.95em;font-weight:600">
+                    <i class="bi bi-clipboard2-data me-2" style="color:#4F9FFF"></i>
+                    数据预处理报告（seaborn + matplotlib）
+                    <span id="prep-badge" class="badge ms-2"
+                          style="background:#1e3a5f;color:#4F9FFF;font-size:0.75em">
+                        5 张诊断图
+                    </span>
+                </button>
+            </h2>
+            <div id="prepPanel"
+                 class="accordion-collapse collapse"
+                 aria-labelledby="prepHeading">
+                <div class="accordion-body" style="padding:1rem">
+                    <div id="prep-loading" class="text-center py-3"
+                         style="color:rgba(255,255,255,0.4);font-size:0.85em">
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        正在生成预处理诊断图…
+                    </div>
+                    <div id="prep-charts-grid"
+                         class="row g-3"
+                         style="display:none">
+                        <!-- 5 张 base64 图片由 JS 动态插入 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="charts-section" style="display:none">
     <div id="adaptive-charts-grid" class="row g-4 align-items-stretch">
         <!-- 由 renderAdaptiveDashboard() 动态填充 6 个 chart-card -->
@@ -29,6 +72,54 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <script>
+// 加载预处理诊断图
+async function loadPrepCharts() {
+    const grid    = document.getElementById('prep-charts-grid');
+    const loading = document.getElementById('prep-loading');
+    try {
+        const res = await fetch('/api/analysis/preprocess_charts');
+        if (!res.ok) { loading.textContent = '加载失败'; return; }
+        const data = await res.json();
+        const charts = data.charts || [];
+        loading.style.display = 'none';
+        grid.style.display = 'flex';
+        grid.style.flexWrap = 'wrap';
+        charts.forEach(function(c) {
+            if (!c.img) return;
+            const col = document.createElement('div');
+            col.className = 'col-12 col-md-6';
+            col.innerHTML = `
+                <div class="card h-100"
+                     style="background:#0a0f1a;border:1px solid #1e3a5f;border-radius:8px">
+                    <div class="card-header"
+                         style="background:transparent;border-bottom:1px solid #1e3a5f;
+                                padding:8px 12px;font-size:0.85em;color:#8899B8;font-weight:600">
+                        <i class="bi bi-bar-chart-fill me-1" style="color:#4F9FFF"></i>
+                        ${c.title || '诊断图'}
+                    </div>
+                    <div class="card-body p-2">
+                        <img src="${c.img}" alt="${c.title}"
+                             style="width:100%;border-radius:4px;display:block">
+                        <p class="mt-2 mb-0"
+                           style="font-size:0.78em;color:rgba(255,255,255,0.45);
+                                  line-height:1.4">
+                            ${c.desc || ''}
+                        </p>
+                    </div>
+                </div>`;
+            grid.appendChild(col);
+        });
+    } catch(e) {
+        loading.textContent = '加载失败：' + e.message;
+    }
+}
+
+// 折叠面板展开时懒加载
+var _prepLoaded = false;
+document.getElementById('prepPanel').addEventListener('show.bs.collapse', function() {
+    if (!_prepLoaded) { _prepLoaded = true; loadPrepCharts(); }
+});
+
 window.initVisualizationPage();
 </script>
 {% endblock %}

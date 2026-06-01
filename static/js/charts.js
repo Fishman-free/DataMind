@@ -100,6 +100,8 @@ window.initVisualizationPage = async function () {
 
     noDataAlert.style.display = 'none';
     chartsSection.style.display = '';
+            var prepSection = document.getElementById('prep-section');
+            if (prepSection) prepSection.style.display = '';
 
     // 获取数据画像
     let profile = {};
