@@ -25,7 +25,7 @@
 | **数据叙事引擎** | 将结构化报告转化为有起承转合的数据故事，含高亮数字卡片和核心结论 |
 | **数据质量评分卡** | 5 维度加权评分（完整性/唯一性/一致性/时效性/准确性），0-100 综合分 + A/B/C/D 等级 |
 | **智能分析计划** | AI 分析 Schema 并输出结构化分析清单，用户勾选确认后一键执行 |
-| **305 个单元测试** | 21 个测试文件全模块覆盖，含 5 个真实数据子集的集成测试，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
+| **247 个单元测试** | 11 个测试文件全模块覆盖，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
 
 ---
 
@@ -273,11 +273,10 @@ createSSEConnection({ url, body, handlers, onError })
    - [6.10 右侧自动洞察面板](#610-右侧自动洞察面板)
 7. [API 接口参考](#7-api-接口参考)
 8. [配置说明](#8-配置说明)
-9. [数据集说明](#9-数据集说明)
-10. [测试说明](#10-测试说明)
-11. [版本历史](#11-版本历史)
-12. [常见问题](#12-常见问题)
-13. [技术架构](#13-技术架构)
+9. [测试说明](#9-测试说明)
+10. [版本历史](#10-版本历史)
+11. [常见问题](#11-常见问题)
+12. [技术架构](#12-技术架构)
 
 ---
 
@@ -303,7 +302,7 @@ createSSEConnection({ url, body, handlers, onError })
 | 数据质量评分卡 🆕 | 5 维度加权评分（完整性 30%/唯一性 20%/一致性 15%/时效性 15%/准确性 20%），0-100 分 + A/B/C/D 等级 | 否 |
 | 数据概览页 | 统计卡片 + 预处理摘要 + 前 50 行预览表格 | 否 |
 | 自动洞察面板 | 趋势/异常/分布/相关/周期 5 类洞察，实时推送 | 否 |
-| 可视化仪表盘 | 6 个 Plotly 交互图表 + 🆕 预处理诊断图面板（5 张 seaborn/matplotlib 静态图） | 否 |
+| 可视化仪表盘 | 6 个 Plotly 交互图表 | 否 |
 | 智能问答（多轮） 🆕 | 自然语言 → AI 流式生成代码 → 沙箱执行 → 文字 + 图表，SSE 逐 token 推送 | **是** |
 | NL2Vis 图表工作台 🆕 | 自然语言描述 → Plotly 交互图表，支持迭代修改、复制代码、下载 PNG | 是（降级可用） |
 | 智能分析计划 🆕 | AI 分析 Schema → 结构化分析清单，勾选确认后一键执行 | 是（降级可用） |
@@ -327,8 +326,7 @@ DataMind/
 │   ├── preprocessor.py       # Pipeline 清洗（5 步骤 + 特征工程）
 │   ├── analyzer.py           # 统计分析（趋势/商品/RFM/相关/时段/国家）
 │   ├── detector.py           # 异常检测（IQR / Z-Score / 趋势突变）
-│   ├── quality_scorer.py     # 🆕 数据质量评分卡（5 维度加权评分）
-│   └── preprocess_visualizer.py  # 🆕 预处理诊断可视化（seaborn+matplotlib，5 张静态诊断图）
+│   └── quality_scorer.py     # 🆕 数据质量评分卡（5 维度加权评分）
 │
 ├── ai/                       # AI 智能体层
 │   ├── chat.py               # 多轮对话管理（ChatSession），SSE 流式支持
@@ -366,34 +364,21 @@ DataMind/
 │
 ├── datasets/                 # 上传文件保存目录
 │
-├── tests/                    # 单元测试（305 个用例，21 个测试文件）
-│   ├── test_loader.py
-│   ├── test_loader_sep.py
-│   ├── test_preprocessor.py
-│   ├── test_analyzer.py
-│   ├── test_analyzer_generic.py
-│   ├── test_detector.py
-│   ├── test_profiler.py
-│   ├── test_chat.py
-│   ├── test_code_generator.py
-│   ├── test_insight.py
-│   ├── test_report.py
-│   ├── test_report_agents.py
-│   ├── test_chart_generator.py
-│   ├── test_plan_generator.py
-│   ├── test_storyteller.py
-│   ├── test_quality_scorer.py
-│   ├── test_quality_timeliness.py
-│   ├── test_adaptive_charts_contract.py
-│   ├── test_preprocess_visualizer.py  # 🆕 seaborn+matplotlib 可视化测试
-│   ├── test_retail_subsets.py   # 🆕 Kaggle 真实数据集 5 个子集集成测试
-│   ├── test_api.py
-│   └── data/                    # 真实测试子集（来自 Online Retail 数据集）
-│       ├── subset_uk.csv           # 子集1：UK 订单 500 行
-│       ├── subset_international.csv # 子集2：国际订单（非 UK）200 行
-│       ├── subset_missing.csv      # 子集3：缺失 CustomerID 200 行
-│       ├── subset_highvalue.csv    # 子集4：高单价（>10）商品 200 行
-│       └── subset_returns.csv      # 子集5：退货记录（负数量）100 行
+└── tests/                    # 单元测试（247 个用例，11 个测试文件，全 Mock）
+    ├── test_loader.py
+    ├── test_preprocessor.py
+    ├── test_analyzer.py
+    ├── test_detector.py
+    ├── test_chat.py
+    ├── test_code_generator.py
+    ├── test_insight.py
+    ├── test_report.py
+    ├── test_report_agents.py
+    ├── test_chart_generator.py  # 🆕
+    ├── test_plan_generator.py   # 🆕
+    ├── test_storyteller.py      # 🆕
+    ├── test_quality_scorer.py   # 🆕
+    └── test_api.py
 ```
 
 ---
@@ -422,8 +407,6 @@ pip install -r requirements.txt
 | numpy | ≥ 1.24 | 数值计算 |
 | openai | ≥ 1.0 | 智能问答 + 报告生成 |
 | plotly | ≥ 5.0 | 交互式图表（后端 JSON 序列化） |
-| **matplotlib** | **≥ 3.7** | **预处理诊断图（seaborn 绘图后端，非交互式 Agg 渲染）** |
-| **seaborn** | **≥ 0.13** | **预处理可视化：缺失值热力图、异常箱线图等 5 张诊断图** |
 | chardet | ≥ 5.0 | CSV 编码自动检测 |
 | openpyxl | ≥ 3.1 | Excel 文件读写 |
 | markdown | ≥ 3.5 | 报告 Markdown → HTML 转换 |
@@ -1146,47 +1129,6 @@ data: [DONE]\n\n
 
 ---
 
-### 🆕 GET /api/analysis/preprocess_charts
-
-返回由 **seaborn + matplotlib** 生成的 5 张预处理诊断图（base64 PNG），用于可视化仪表盘「预处理报告」折叠面板。
-
-**响应（成功）**：
-```json
-{
-  "charts": [
-    {
-      "title": "缺失值分布热力图",
-      "img": "data:image/png;base64,iVBORw0KGgoAAAANS...",
-      "desc": "展示各列缺失值分布，热力图颜色越深表示缺失越严重"
-    },
-    {
-      "title": "清洗漏斗图（行数变化）",
-      "img": "data:image/png;base64,...",
-      "desc": "展示原始→去重→过滤各阶段行数减少情况"
-    },
-    {
-      "title": "数值列异常值箱线图",
-      "img": "data:image/png;base64,...",
-      "desc": "红色散点为 IQR×1.5 判定的异常值"
-    },
-    {
-      "title": "字段类型分布饼图",
-      "img": "data:image/png;base64,...",
-      "desc": "展示各数据类型（数值/文本/时间/布尔）占比"
-    },
-    {
-      "title": "缺失填充前后对比",
-      "img": "data:image/png;base64,...",
-      "desc": "填充前后各列非空值数量对比柱状图"
-    }
-  ]
-}
-```
-
-> 图片为 `data:image/png;base64,...` 格式，前端直接赋值给 `<img src>` 即可渲染，无需额外解码。
-
----
-
 ## 8. 配置说明
 
 编辑 `config.py` 修改以下参数：
@@ -1206,62 +1148,12 @@ data: [DONE]\n\n
 
 ---
 
-## 9. 数据集说明
-
-### 测试数据集：Online Retail（UCI / Kaggle 公开数据集）
-
-**数据集来源（公开数据集，提供原始链接）：**
-
-| 来源 | 链接 |
-|------|------|
-| UCI Machine Learning Repository | https://archive.ics.uci.edu/dataset/352/online+retail |
-| Kaggle 镜像 | https://www.kaggle.com/datasets/mashlyn/online-retail-ii-uci |
-
-**数据集概况：**
-
-| 属性 | 值 |
-|------|----|
-| 数据规模 | 541,909 条交易记录 |
-| 字段数 | 8 个字段 |
-| 时间范围 | 2010-12-01 ～ 2011-12-09（约 12 个月） |
-| 主要市场 | UK（91.4%）+ 德国、法国、爱尔兰等国际市场 |
-| 文件格式 | CSV（UTF-8） |
-
-**字段说明：**
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| InvoiceNo | str | 发票号（以 C 开头表示取消订单） |
-| StockCode | str | 商品编号 |
-| Description | str | 商品名称 |
-| Quantity | int | 购买数量（负值为退货） |
-| InvoiceDate | str | 交易时间（精确到分钟） |
-| UnitPrice | float | 单价（英镑） |
-| CustomerID | float | 客户 ID（约 25% 缺失，匿名客户） |
-| Country | str | 客户所在国家 |
-
-### 数据集 5 个子集划分
-
-按照「公开数据集须划分为不少于 5 个子集（子集可部分重叠）用于测试」的要求，从原始数据集中提取以下 5 个语义独立的子集：
-
-| 子集 | 文件 | 行数 | 划分依据 | 测试目标 |
-|------|------|:----:|---------|---------|
-| **子集 1：UK 主市场** | `tests/data/subset_uk.csv` | 500 | `Country == "United Kingdom"` | 验证主流程：加载→清洗→日期解析→去除负量 |
-| **子集 2：国际订单** | `tests/data/subset_international.csv` | 200 | `Country != "United Kingdom"` | 验证多国家场景，确认国家字段多样性 |
-| **子集 3：缺失值订单** | `tests/data/subset_missing.csv` | 200 | `CustomerID.isna()` | 专项测试缺失值处理（匿名客户 100% 缺失 CustomerID） |
-| **子集 4：高单价商品** | `tests/data/subset_highvalue.csv` | 200 | `UnitPrice > 10` | 验证异常检测：高价商品应生成 `_is_outlier` 标记列 |
-| **子集 5：退货记录** | `tests/data/subset_returns.csv` | 100 | `Quantity < 0` | 验证无效记录过滤：清洗后负数量行应全部被移除 |
-
-子集 1 与子集 2 存在部分重叠（均来自主数据集 UK / 非 UK 划分），子集 3-5 与子集 1 重叠（部分行在原始数据中可能同时满足多个条件）。
-
----
-
-## 10. 测试说明
+## 9. 测试说明
 
 ### 运行测试
 
 ```bash
-# 运行全部测试（305 个用例）
+# 运行全部测试（276 个用例）
 python -m pytest tests/ -v
 
 # 只运行特定模块
@@ -1277,45 +1169,38 @@ python -m pytest tests/ -q
 | 测试文件 | 覆盖模块 | 用例数 |
 |----------|----------|:------:|
 | test_loader.py | data/loader.py | ~10 |
-| test_loader_sep.py | data/loader.py（分隔符专项） | ~5 |
 | test_preprocessor.py | data/preprocessor.py | 34 |
 | test_analyzer.py | data/analyzer.py | ~25 |
-| test_analyzer_generic.py | data/analyzer.py（通用数据专项） | ~10 |
 | test_detector.py | data/detector.py | 21 |
-| test_profiler.py | data/profiler.py | ~8 |
 | test_chat.py | ai/chat.py | 12 |
 | test_code_generator.py | ai/code_generator.py | 19 |
 | test_insight.py | ai/insight.py | 7 |
 | test_report.py | ai/report.py | 13 |
 | test_report_agents.py | ai/report_agents.py | 13 |
-| test_chart_generator.py | ai/chart_generator.py | ~15 |
-| test_plan_generator.py | ai/plan_generator.py | ~10 |
-| test_storyteller.py | ai/storyteller.py | ~10 |
-| test_quality_scorer.py | data/quality_scorer.py | ~15 |
-| test_quality_timeliness.py | data/quality_scorer.py（时效性专项） | 3 |
-| test_adaptive_charts_contract.py | routes/api.py（自适应图表契约） | ~5 |
-| test_preprocess_visualizer.py 🆕 | data/preprocess_visualizer.py | 5 |
-| test_retail_subsets.py 🆕 | **Kaggle 真实数据集 5 子集集成测试** | **24** |
+| test_chart_generator.py 🆕 | ai/chart_generator.py | ~15 |
+| test_plan_generator.py 🆕 | ai/plan_generator.py | ~10 |
+| test_storyteller.py 🆕 | ai/storyteller.py | ~10 |
+| test_quality_scorer.py 🆕 | data/quality_scorer.py | ~15 |
+| test_quality_timeliness.py 🆕 | data/quality_scorer.py（时效性专项） | 3 |
 | test_api.py | routes/api.py（含 SSE/新端点） | ~43 |
-| **合计** | | **305** |
+| **合计** | | **276** |
 
-> **真实数据子集测试**（`test_retail_subsets.py`）：基于 Online Retail UCI 公开数据集，使用 5 个语义子集（UK 主市场 / 国际订单 / 缺失值 / 高单价 / 退货）对加载→预处理全链路进行端到端验证，无需 MagicMock。其余测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。
+> 所有测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。SSE 响应测试验证流式格式和事件类型完整性。
 
 ---
 
-## 11. 版本历史
+## 10. 版本历史
 
 | 版本 | 日期 | 主要更新 |
 |------|------|---------|
 | **v1.0** | 2026-05 初 | 数据上传→自动清洗→规则洞察→自然语言问答→交互图表→一键报告 |
 | **v2.0** | 2026-05 中 | 上线专家模式：多 Agent 协作框架（StatisticsAgent/InsightAgent/QAAgent/SynthesisAgent），深度报告模式，增强数据预处理（文本清洗/智能缺失值填充/两档 IQR 异常标记/特征工程），Ollama 本地免费部署支持 |
 | **v3.0** | 2026-05 末 | SSE 流式响应底座（问答+报告流式推送），NL2Vis 图表工作台（自然语言→Plotly 交互图表），数据质量评分卡（5 维度加权评分），智能分析计划生成器，数据叙事引擎，测试覆盖扩至 247 用例 |
-| **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 281 用例 |
-| **v3.2** | 2026-06-01 | **预处理可视化增强**：新增 `data/preprocess_visualizer.py`（seaborn+matplotlib，5 张诊断图：缺失值热力图、清洗漏斗图、异常箱线图、字段类型饼图、缺失填充对比图），可视化仪表盘新增「预处理报告」折叠面板（Bootstrap Accordion 懒加载）。**图表坐标轴补全**：`adaptive_charts` 端点所有图表追加 `x_label`/`y_label` 元数据，`_renderChartSlot` 自动渲染轴标签。**真实数据集测试**：基于 Kaggle Online Retail 数据集划分 5 个语义子集，新增 24 个集成测试用例。总测试覆盖 **305 个用例** |
+| **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 276 用例 |
 
 ---
 
-## 12. 常见问题
+## 11. 常见问题
 
 **Q1：上传 CSV 后中文显示乱码？**
 
@@ -1453,7 +1338,7 @@ Cmd+Shift+R     （macOS 强制刷新）
 
 ---
 
-## 13. 技术架构
+## 12. 技术架构
 
 ### 分层架构
 
@@ -1519,4 +1404,4 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-*DataMind v3.2 — 来源：学生 + AI*
+*DataMind v3.1 — 来源：学生 + AI*
