@@ -32,6 +32,12 @@ def execute_trend_plan(df: pd.DataFrame, plan: dict, context: dict | None = None
     freq = _FREQ_MAP.get(freq_key, "ME")
     title = str(plan.get("title") or f"{value_col} 趋势")
 
+    # 退化情形：无独立数值列时 value_col 降级后与 date_col 同名，无法做趋势
+    if date_col == value_col:
+        evidence = pd.DataFrame({"message": ["无可用于趋势分析的有效日期/数值数据。"]})
+        return SkillResult(answer="无法计算趋势：缺少有效的日期或数值列。",
+                           evidence=evidence, chart=None, meta={"title": title})
+
     work = df[[date_col, value_col]].copy()
     work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
     work[value_col] = pd.to_numeric(work[value_col], errors="coerce")

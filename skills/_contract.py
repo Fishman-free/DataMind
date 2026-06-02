@@ -41,9 +41,14 @@ def infer_schema(df: pd.DataFrame) -> dict[str, str]:
 
 
 def safe_col(df: pd.DataFrame, value: Any, prefer_numeric: bool = False) -> str:
-    """校验计划列名；非法时降级到第一个（数值）列。"""
+    """校验计划列名；非法时降级到第一个（数值）列。
+
+    当 prefer_numeric=True 时，若指定列不存在或存在但非数值，均降级到首个数值列。
+    """
     if value in df.columns:
-        return str(value)
+        if not prefer_numeric or pd.api.types.is_numeric_dtype(df[value]):
+            return str(value)
+        # 存在但非数值，且调用方要求数值列 → 继续向下降级
     if prefer_numeric:
         nums = df.select_dtypes(include="number").columns
         if len(nums):
