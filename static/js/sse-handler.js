@@ -45,6 +45,8 @@ function supportsSSE() {
  * @param {function} [handlers.onSection] - Agent 报告章节
  * @param {function} [handlers.onReportStart] - 报告流开始
  * @param {function} [handlers.onReportDone] - 报告流完成
+ * @param {function} [handlers.onRoute] - 技能路由选择结果
+ * @param {function} [handlers.onEvidence] - 技能证据表数据
  * @param {function} [handlers.onError] - 错误消息
  * @param {function} [handlers.onDone] - 流结束
  * @param {function} [handlers.onProgress] - 原始进度更新（通用 handler）
@@ -230,6 +232,12 @@ function dispatch(msg, handlers) {
             break;
         case 'heartbeat':
             if (handlers.onHeartbeat) handlers.onHeartbeat();
+            break;
+        case 'route':
+            if (handlers.onRoute) handlers.onRoute(msg);
+            break;
+        case 'evidence':
+            if (handlers.onEvidence) handlers.onEvidence(msg);
             break;
         default:
             // 未知类型，调用通用进度 handler

@@ -62,6 +62,12 @@ async function sendChatMessage() {
                 }
                 scrollToBottom();
             },
+            onRoute: function (msg) {
+                _injectRouteBadge(bubble, msg);
+            },
+            onEvidence: function (msg) {
+                _injectEvidence(bubble, msg.rows || []);
+            },
             onHeartbeat: function () {
                 // 代码执行中，显示心跳指示器
                 var existing = bubble.querySelector('.exec-result-inline');
@@ -537,4 +543,78 @@ function _ensureChatMarkerVisibility(traces) {
         }
         return t;
     });
+}
+
+// ── 技能路由与证据渲染 ──────────────────────────────────────
+
+/**
+ * 在聊天气泡中渲染技能路由徽章。
+ * 赛博朋克风格：半透明青色边框卡片，显示技能名称与路由理由。
+ *
+ * @param {HTMLElement} bubble - 聊天气泡 DOM 元素
+ * @param {object} msg - { skill, title, reason, plan }
+ */
+function _injectRouteBadge(bubble, msg) {
+    if (!bubble || !msg || msg.skill === 'fallback') return;
+
+    // 移除已存在的旧徽章（防止重复）
+    var existing = bubble.querySelector('.skill-route-badge');
+    if (existing) existing.remove();
+
+    var badge = document.createElement('div');
+    badge.className = 'skill-route-badge';
+
+    var SKILL_ICONS = {
+        'stats-skill': '📈', 'viz-skill': '📉', 'trend-skill': '📅',
+        'correlation-skill': '🔗', 'distribution-skill': '📊', 'profile-skill': '📋'
+    };
+    var skillIcon = SKILL_ICONS[msg.skill] || '📊';
+
+    var reasonText = msg.reason ? ' · ' + _escapeHtml(msg.reason) : '';
+    badge.innerHTML =
+        '<span class="skill-route-icon">' + skillIcon + '</span>' +
+        '<span class="skill-route-text">已选择技能：<strong>' +
+        _escapeHtml(msg.title || msg.skill) + '</strong>' +
+        reasonText + '</span>';
+
+    var bodyEl = bubble.querySelector('.chat-msg-body');
+    if (bodyEl) {
+        bodyEl.parentNode.insertBefore(badge, bodyEl);
+    } else {
+        bubble.appendChild(badge);
+    }
+}
+
+/**
+ * 在聊天气泡中渲染技能证据表。
+ * 复用 _formatResult 将 rows 渲染为 HTML 表格，包裹在 evidence 容器中。
+ *
+ * @param {HTMLElement} bubble - 聊天气泡 DOM 元素
+ * @param {Array} rows - list of dict，证据数据行
+ */
+function _injectEvidence(bubble, rows) {
+    if (!bubble || !rows || !rows.length) return;
+
+    // 移除已存在的旧证据表
+    var existing = bubble.querySelector('.skill-evidence-inline');
+    if (existing) existing.remove();
+
+    // 锚点：优先插入到 route badge 之后、chat-msg-body 之前
+    var anchor = bubble.querySelector('.skill-route-badge')
+        || bubble.querySelector('.chat-msg-body');
+    if (!anchor) return;
+
+    var box = document.createElement('div');
+    box.className = 'skill-evidence-inline';
+    box.innerHTML =
+        '<div class="skill-evidence-label">📋 证据表</div>' +
+        _formatResult(rows);
+
+    if (anchor.nextSibling) {
+        anchor.parentNode.insertBefore(box, anchor.nextSibling);
+    } else {
+        anchor.parentNode.appendChild(box);
+    }
+
+    scrollToBottom();
 }

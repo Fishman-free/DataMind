@@ -2327,3 +2327,42 @@ main.flex-grow-1 > * {
     overflow: hidden;
     background: rgba(0,0,0,.20);
 }
+
+/* ── 技能路由徽章与证据表 ─────────────────────────────────── */
+.skill-route-badge {
+    margin: 4px 0 8px;
+    padding: 6px 10px;
+    background: rgba(0, 229, 255, 0.06);
+    border: 1px solid rgba(0, 229, 255, 0.18);
+    border-radius: 6px;
+    font-size: 12px;
+    color: #8899B8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.skill-route-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+.skill-route-text {
+    color: #B0C8E0;
+}
+.skill-route-text strong {
+    color: var(--cyan);
+    font-weight: 600;
+}
+.skill-evidence-inline {
+    margin: 6px 0 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    font-size: 12px;
+}
+.skill-evidence-label {
+    font-size: 11px;
+    color: #8899B8;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+}
