@@ -41,6 +41,8 @@ from data.analyzer import Analyzer
 from data.detector import Detector
 from ai.chat import ChatSession
 from ai.insight import InsightEngine
+from ai.skill_router import SkillRouter
+from skills import SKILLS
 
 api_bp = Blueprint("api", __name__)
 
@@ -690,11 +692,19 @@ def chat():
             session.add_message("assistant", result.get("answer", ""))
         return jsonify(result)
 
-    # 新 SSE 流路径
-    def _chat_stream():
-        messages = list(context) + [{"role": "user", "content": question}]
-        full_text = ""
+    # SSE 流路径：技能优先路由 → 确定性执行 + LLM 解释，未命中则代码生成兜底
+    router = SkillRouter(cg.client, config.AI_MODEL)
+    skill_context = {
+        "profile": state.get("profile"),
+        "quality_score": state.get("quality_score"),
+        "df_raw": state.get("df_raw"),
+        "preprocess_report": state.get("preprocess_report"),
+    }
+    messages = list(context) + [{"role": "user", "content": question}]
 
+    def _codegen_stream():
+        """现有代码生成兜底流（逻辑照搬原实现）。来源：学生+AI"""
+        full_text = ""
         try:
             stream = cg.client.chat.completions.create(
                 model=config.AI_MODEL,
@@ -708,13 +718,11 @@ def chat():
                 try:
                     delta = chunk.choices[0].delta
                     if delta and getattr(delta, "content", None):
-                        token = delta.content
-                        full_text += token
-                        yield {"type": "text_delta", "content": token}
+                        full_text += delta.content
+                        yield {"type": "text_delta", "content": delta.content}
                 except (AttributeError, IndexError):
                     continue
 
-            # 提取代码块并在后台线程中执行，避免阻塞 SSE 流
             code = cg.extract_code(full_text)
             if code:
                 if not cg.validate_code(code):
@@ -733,7 +741,6 @@ def chat():
                     t = threading.Thread(target=_run_code, daemon=True)
                     t.start()
 
-                    # 轮询队列，每 1s 发送心跳，最长等待 60s
                     elapsed = 0
                     exec_result = None
                     while elapsed < config.CODE_EXEC_TIMEOUT:
@@ -751,15 +758,57 @@ def chat():
                     if exec_result is None:
                         yield {"type": "error", "message": f"代码执行超时（{config.CODE_EXEC_TIMEOUT}s）"}
                     else:
-                        yield {"type": "exec_result", "success": exec_result["success"], "result": exec_result.get("result"), "stdout": exec_result.get("stdout"), "error": exec_result.get("error")}
+                        yield {"type": "exec_result", "success": exec_result["success"],
+                               "result": exec_result.get("result"),
+                               "stdout": exec_result.get("stdout"),
+                               "error": exec_result.get("error")}
                         chart_data = exec_result.get("chart")
                         if chart_data:
                             yield {"type": "chart", "data": chart_data}
 
-            # 记录到 ChatSession
             if session:
                 session.add_message("user", question)
                 session.add_message("assistant", full_text)
+        except Exception as exc:
+            yield {"type": "error", "message": str(exc)}
+
+    def _chat_stream():
+        """技能优先路由主流程：路由 → 技能执行 → 证据/图表/解释。来源：学生+AI"""
+        try:
+            route = router.route(question, df)
+            skill_name = str(route.get("skill", "fallback"))
+            plan = route.get("plan", {})
+            if not isinstance(plan, dict):
+                plan = {}
+            spec = SKILLS.get(skill_name)
+            if spec is not None:
+                try:
+                    result = spec.execute(df, plan, skill_context)
+                except Exception as exc:
+                    yield {"type": "error", "message": f"技能执行失败：{exc}"}
+                    yield from _codegen_stream()
+                    yield {"type": "done"}
+                    return
+                yield {"type": "route", "skill": skill_name, "title": spec.title,
+                       "reason": route.get("reason", ""), "plan": plan}
+                yield {"type": "evidence",
+                       "columns": [str(c) for c in result.evidence.columns],
+                       "rows": _df_to_records(result.evidence, 50)}
+                if result.chart:
+                    yield {"type": "chart", "data": result.chart}
+                full_text = ""
+                for token in router.explain_stream(question, spec.title,
+                                                   result.evidence, result.answer):
+                    full_text += token
+                    yield {"type": "text_delta", "content": token}
+                if not full_text:
+                    full_text = result.answer
+                    yield {"type": "text_delta", "content": result.answer}
+                if session:
+                    session.add_message("user", question)
+                    session.add_message("assistant", full_text)
+            else:
+                yield from _codegen_stream()
         except Exception as exc:
             yield {"type": "error", "message": str(exc)}
         yield {"type": "done"}

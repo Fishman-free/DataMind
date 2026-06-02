@@ -665,3 +665,124 @@ class TestNewEndpoints:
         assert resp.status_code == 200
         result = resp.get_json()
         assert "quality_grade" in result
+
+
+# ── /api/chat 技能优先路由集成测试 ─────────────────────────────────
+
+class TestChatSkillRouting:
+    """技能优先路由 + 代码生成兜底的 SSE 流集成测试。"""
+
+    def test_chat_skill_path(self, app, loaded_state):
+        """命中技能：路由返回 JSON 计划 → 确定性执行 → 证据/解释流。"""
+        from unittest.mock import MagicMock
+        import json as _json
+        from app import app_state
+
+        # 第 1 次 create()：route() 返回 JSON
+        route_resp = MagicMock()
+        route_resp.choices = [MagicMock()]
+        route_resp.choices[0].message.content = _json.dumps({
+            "skill": "stats-skill",
+            "plan": {"metrics": ["mean"], "columns": ["Quantity"]},
+            "reason": "求均值",
+        })
+
+        # 第 2 次 create()：explain_stream() 返回 token chunks
+        tok1 = MagicMock()
+        tok1.choices = [MagicMock()]
+        tok1.choices[0].delta.content = "平均值为"
+        tok2 = MagicMock()
+        tok2.choices = [MagicMock()]
+        tok2.choices[0].delta.content = "4.4"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [route_resp, [tok1, tok2]]
+
+        mock_cg = MagicMock()
+        mock_cg.client = mock_client
+        app_state["code_generator"] = mock_cg
+
+        client = app.test_client()
+        resp = client.post("/api/chat?stream=true",
+            data='{"question": "Quantity 均值"}',
+            content_type="application/json")
+
+        assert resp.status_code == 200
+        body = b"".join(resp.response).decode("utf-8")
+        assert '"type": "route"' in body, "应有 route 事件"
+        assert '"type": "evidence"' in body, "应有 evidence 事件"
+        assert "平均值为" in body, "应有解释文本"
+
+    def test_chat_fallback_path(self, app, loaded_state):
+        """未命中：路由返回 fallback → 走现有代码生成流。"""
+        from unittest.mock import MagicMock
+        from app import app_state
+
+        # 第 1 次 create()：route() 返回 garbage → fallback
+        route_resp = MagicMock()
+        route_resp.choices = [MagicMock()]
+        route_resp.choices[0].message.content = "抱歉我无法回答"
+
+        # 第 2 次 create()：_codegen_stream
+        delta_chunk = MagicMock()
+        delta_chunk.choices = [MagicMock()]
+        delta_chunk.choices[0].delta.content = "普通回答"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [route_resp, [delta_chunk]]
+
+        mock_cg = MagicMock()
+        mock_cg.client = mock_client
+        mock_cg.extract_code.return_value = ""  # 无代码块
+        mock_cg.validate_code.return_value = True
+        app_state["code_generator"] = mock_cg
+
+        client = app.test_client()
+        resp = client.post("/api/chat?stream=true",
+            data='{"question": "你好"}',
+            content_type="application/json")
+
+        assert resp.status_code == 200
+        body = b"".join(resp.response).decode("utf-8")
+        assert "普通回答" in body, "应有代码生成兜底文本"
+
+    def test_chat_skill_execute_error_falls_back(self, app, loaded_state):
+        """技能执行异常时降级到代码生成兜底。"""
+        from unittest.mock import MagicMock, patch
+        import json as _json
+        from app import app_state
+
+        # 第 1 次 create()：route() 返回有效 skill
+        route_resp = MagicMock()
+        route_resp.choices = [MagicMock()]
+        route_resp.choices[0].message.content = _json.dumps({
+            "skill": "stats-skill",
+            "plan": {"metrics": ["mean"], "columns": ["Quantity"]},
+            "reason": "求均值",
+        })
+
+        # 第 2 次 create()：_codegen_stream（降级）
+        delta_chunk = MagicMock()
+        delta_chunk.choices = [MagicMock()]
+        delta_chunk.choices[0].delta.content = "降级回答"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [route_resp, [delta_chunk]]
+
+        mock_cg = MagicMock()
+        mock_cg.client = mock_client
+        mock_cg.extract_code.return_value = ""
+        mock_cg.validate_code.return_value = True
+        app_state["code_generator"] = mock_cg
+
+        # 让 stats-skill 执行时抛出异常
+        with patch("skills.stats_skill.stats_skill.execute_stats_plan",
+                   side_effect=RuntimeError("模拟执行失败")):
+            client = app.test_client()
+            resp = client.post("/api/chat?stream=true",
+                data='{"question": "Quantity 均值"}',
+                content_type="application/json")
+
+        assert resp.status_code == 200
+        body = b"".join(resp.response).decode("utf-8")
+        assert "降级回答" in body, "技能失败后应有代码生成兜底"
