@@ -25,7 +25,7 @@
 | **数据叙事引擎** | 将结构化报告转化为有起承转合的数据故事，含高亮数字卡片和核心结论 |
 | **数据质量评分卡** | 5 维度加权评分（完整性/唯一性/一致性/时效性/准确性），0-100 综合分 + A/B/C/D 等级 |
 | **智能分析计划** | AI 分析 Schema 并输出结构化分析清单，用户勾选确认后一键执行 |
-| **247 个单元测试** | 11 个测试文件全模块覆盖，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
+| **338 个单元测试** | 30 个测试文件全模块覆盖，全部使用 MagicMock 模拟，不依赖真实 API 环境 |
 
 ---
 
@@ -58,7 +58,14 @@ sse-handler.js  fetch() → response.body.getReader() → 逐 chunk 解析
 | 120s 全局超时 | `setTimeout` + `AbortController.abort()`，防止僵尸连接 |
 | 优雅降级 | SSE 不可用时自动回退到 `?stream=false` 同步模式 |
 
-**SSE 事件时序（一次完整问答）：**
+**SSE 事件时序（一次完整问答 — 技能命中路径）：**
+
+```
+route  →  evidence  →  chart(可选)  →  text_delta ×N  →  done  →  [DONE]
+技能选择     证据表        图表渲染          流式解释         流结束
+```
+
+**SSE 事件时序（一次完整问答 — 代码生成兜底路径）：**
 
 ```
 text_delta ×N  →  code_complete  →  heartbeat ×N  →  exec_result  →  chart(可选)  →  done  →  [DONE]
@@ -228,7 +235,48 @@ DataMind 能识别 **6 种数据画像**，并为每种类型自动选择最合�
 
 ---
 
-### 9. SSE 前端工程化 — `sse-handler.js`
+### 9. 技能化问数架构 — Skill-First 路由
+
+DataMind v3.2 将智能问答从「LLM 生成任意 Python 代码 + 沙箱执行」重构为**技能优先路由**架构：
+
+```
+用户自然语言问题
+       │
+       ▼
+SkillRouter.route() ── LLM 选择技能 + 生成 JSON 计划
+       │
+       ├─ 命中 ──→ skills/<name>_skill/ 确定性脚本执行 → 证据表 + 图表
+       │              │
+       │              ▼
+       │         SkillRouter.explain_stream() ── LLM 基于证据流式中文解释
+       │
+       └─ 未命中 ──→ 代码生成沙箱兜底（code_generator.py，零改动）
+```
+
+**6 个确定性技能：**
+
+| 技能 | 触发条件 | 产出 |
+|------|---------|------|
+| `stats-skill` | 均值/中位数/方差/分组统计 | 描述统计证据表 |
+| `viz-skill` | 柱状图/折线图/散点图/饼图 | 聚合数据 + Plotly 交互图表 |
+| `trend-skill` | 时间序列趋势/月度/周度变化 | 重采样趋势线 + 图表 |
+| `correlation-skill` | 字段相关性/关联关系 | 相关矩阵 + 热力图 |
+| `distribution-skill` | 数据分布/离散度/异常值 | 直方图/箱线图 + 描述统计 |
+| `profile-skill` | 数据集概览/Schema/质量 | 概览表 / Schema 表 / 质量评分 |
+
+**技术特点：**
+
+| 特点 | 说明 |
+|------|------|
+| SKILL.md + 脚本分离 | 每个技能 = LLM 可读的 Markdown 规范 + 独立的确定性 Python 脚本 |
+| JSON 计划驱动 | LLM 仅输出结构化 JSON（`{skill, plan, reason}`），不生成代码 |
+| 证据先于解释 | 脚本在真实数据上执行 → 产出证据表 → LLM 基于证据二次解释，杜绝幻觉 |
+| 代码生成兜底 | 无技能匹配时无缝降级到现有代码沙箱，行为与改造前一致 |
+| 前端路由徽章 | SSE `route` 事件 → 聊天气泡渲染技能选择徽章 + 证据表 |
+
+> 核心设计哲学：**「规则优先、LLM 解释」**——确定性脚本保证分析准确可复现，LLM 仅负责自然语言路由和结果解读，两者职责分离。
+
+### 10. SSE 前端工程化 — `sse-handler.js`
 
 不依赖第三方库，约 200 行纯 JavaScript 实现的 SSE 客户端基础设施：
 
@@ -331,12 +379,23 @@ DataMind/
 ├── ai/                       # AI 智能体层
 │   ├── chat.py               # 多轮对话管理（ChatSession），SSE 流式支持
 │   ├── code_generator.py     # 自然语言 → Pandas 代码，安全沙箱执行
+│   ├── skill_router.py       # 🆕 技能路由器（LLM 选技能 + JSON 计划 + 证据解释）
 │   ├── insight.py            # 规则引擎自动洞察（零 API 依赖）
 │   ├── report.py             # GPT 润色分析报告，Markdown → HTML，SSE 流式支持
 │   ├── report_agents.py      # 多 Agent 框架（StatisticsAgent/InsightAgent/QAAgent/SynthesisAgent）
 │   ├── chart_generator.py    # 🆕 NL2Vis 自然语言图表生成器
 │   ├── plan_generator.py     # 🆕 智能分析计划生成器
 │   └── storyteller.py        # 🆕 数据叙事引擎
+│
+├── skills/                   # 🆕 确定性技能层（6 个技能）
+│   ├── __init__.py           # SkillSpec 注册表 + load_catalog()
+│   ├── _contract.py          # SkillResult 数据类 + 公共校验/序列化工具
+│   ├── stats_skill/          # 描述统计 + 分组聚合（SKILL.md + 脚本）
+│   ├── viz_skill/            # 柱/折/散/饼图生成
+│   ├── trend_skill/          # 时间序列重采样趋势
+│   ├── correlation_skill/    # 相关矩阵 + 热力图
+│   ├── distribution_skill/   # 直方图 / 箱线图
+│   └── profile_skill/        # 概览 / schema / 质量画像
 │
 ├── routes/                   # Flask 路由层
 │   ├── pages.py              # 页面路由（/, /analysis, /visualization, /report）
@@ -364,7 +423,7 @@ DataMind/
 │
 ├── datasets/                 # 上传文件保存目录
 │
-└── tests/                    # 单元测试（247 个用例，11 个测试文件，全 Mock）
+└── tests/                    # 单元测试（338 个用例，30 个测试文件，全 Mock）
     ├── test_loader.py
     ├── test_preprocessor.py
     ├── test_analyzer.py
@@ -378,6 +437,22 @@ DataMind/
     ├── test_plan_generator.py   # 🆕
     ├── test_storyteller.py      # 🆕
     ├── test_quality_scorer.py   # 🆕
+    ├── test_quality_timeliness.py # 🆕
+    ├── test_adaptive_charts_contract.py # 🆕 自适应图表契约
+    ├── test_analyzer_generic.py  # 通用数据集分析
+    ├── test_loader_sep.py        # 分隔符检测专项
+    ├── test_preprocess_visualizer.py # 🆕 预处理可视化
+    ├── test_profiler.py          # 🆕 数据画像
+    ├── test_retail_subsets.py    # 零售数据子集专项
+    ├── test_skill_contract.py    # 🆕 技能契约层
+    ├── test_skill_stats.py       # 🆕 stats-skill
+    ├── test_skill_viz.py         # 🆕 viz-skill
+    ├── test_skill_trend.py       # 🆕 trend-skill
+    ├── test_skill_correlation.py # 🆕 correlation-skill
+    ├── test_skill_distribution.py # 🆕 distribution-skill
+    ├── test_skill_profile.py     # 🆕 profile-skill
+    ├── test_skill_registry.py    # 🆕 技能注册表
+    ├── test_skill_router.py      # 🆕 SkillRouter
     └── test_api.py
 ```
 
@@ -1153,7 +1228,7 @@ data: [DONE]\n\n
 ### 运行测试
 
 ```bash
-# 运行全部测试（276 个用例）
+# 运行全部测试（338 个用例）
 python -m pytest tests/ -v
 
 # 只运行特定模块
@@ -1182,8 +1257,23 @@ python -m pytest tests/ -q
 | test_storyteller.py 🆕 | ai/storyteller.py | ~10 |
 | test_quality_scorer.py 🆕 | data/quality_scorer.py | ~15 |
 | test_quality_timeliness.py 🆕 | data/quality_scorer.py（时效性专项） | 3 |
-| test_api.py | routes/api.py（含 SSE/新端点） | ~43 |
-| **合计** | | **276** |
+| test_adaptive_charts_contract.py 🆕 | routes/api.py（自适应图表契约） | 2 |
+| test_analyzer_generic.py | data/analyzer.py（通用数据集） | 5 |
+| test_loader_sep.py | data/loader.py（分隔符检测） | 3 |
+| test_preprocess_visualizer.py 🆕 | data/preprocess_visualizer.py | 5 |
+| test_profiler.py 🆕 | data/profiler.py | 6 |
+| test_retail_subsets.py | data/analyzer.py（零售子集专项） | 24 |
+| test_skill_contract.py 🆕 | skills/_contract.py | 5 |
+| test_skill_stats.py 🆕 | skills/stats_skill/ | 3 |
+| test_skill_viz.py 🆕 | skills/viz_skill/ | 3 |
+| test_skill_trend.py 🆕 | skills/trend_skill/ | 2 |
+| test_skill_correlation.py 🆕 | skills/correlation_skill/ | 2 |
+| test_skill_distribution.py 🆕 | skills/distribution_skill/ | 3 |
+| test_skill_profile.py 🆕 | skills/profile_skill/ | 3 |
+| test_skill_registry.py 🆕 | skills/__init__.py | 3 |
+| test_skill_router.py 🆕 | ai/skill_router.py | 5 |
+| test_api.py | routes/api.py（含 SSE/技能路由） | ~45 |
+| **合计** | | **338** |
 
 > 所有测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。SSE 响应测试验证流式格式和事件类型完整性。
 
@@ -1197,6 +1287,7 @@ python -m pytest tests/ -q
 | **v2.0** | 2026-05 中 | 上线专家模式：多 Agent 协作框架（StatisticsAgent/InsightAgent/QAAgent/SynthesisAgent），深度报告模式，增强数据预处理（文本清洗/智能缺失值填充/两档 IQR 异常标记/特征工程），Ollama 本地免费部署支持 |
 | **v3.0** | 2026-05 末 | SSE 流式响应底座（问答+报告流式推送），NL2Vis 图表工作台（自然语言→Plotly 交互图表），数据质量评分卡（5 维度加权评分），智能分析计划生成器，数据叙事引擎，测试覆盖扩至 247 用例 |
 | **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 276 用例 |
+| **v3.2** | 2026-06-02 | **技能化问数架构**：新增 `skills/` 确定性技能层（6 个技能：stats/viz/trend/correlation/distribution/profile），每个技能 = `SKILL.md` + 独立 Python 脚本。`SkillRouter` 实现 LLM 双阶段调用：第 1 次选技能 + 生成 JSON 计划，第 2 次基于证据表流式中文解释。`/chat` 集成技能优先路由，无命中时降级到代码生成沙箱兜底。前端新增 SSE `route`/`evidence` 事件渲染（技能选择徽章 + 证据表）。测试扩至 338 用例 |
 
 ---
 
@@ -1404,4 +1495,4 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-*DataMind v3.1 — 来源：学生 + AI*
+*DataMind v3.2 — 来源：学生 + AI*
