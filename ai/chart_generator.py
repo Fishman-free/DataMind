@@ -118,7 +118,8 @@ class ChartGenerator:
 图表需求：{description}"""
 
         if previous_chart:
-            user_prompt += f"\n\n当前图表（请基于此修改）：\n{json.dumps(previous_chart, ensure_ascii=False)[:2000]}"
+            summary = self._summarize_previous_chart(previous_chart)
+            user_prompt += f"\n\n当前图表（请基于此修改）：\n{summary}"
             user_prompt += "\n\n提示：如果用户要求修改颜色、色系、主题等样式，只修改样式属性（marker/colorscale/line color），保持数据查询逻辑不变。"
 
         try:
@@ -148,6 +149,101 @@ class ChartGenerator:
         num_cols = df.select_dtypes(include=["number"]).columns
         if len(num_cols) > 0:
             lines.append(f"数值列前5行:\n{df[num_cols].head(5).to_string()}")
+        return "\n".join(lines)
+
+    def _summarize_previous_chart(self, chart: dict) -> str:
+        """
+        从 Plotly JSON 中提取结构化摘要，供 AI 理解当前图表并进行修改。
+
+        与粗暴截断原始 JSON 不同，该方法智能提取：
+        - 图表类型、trace 数量、标题、轴标签
+        - 每个 trace 的名称、类型、颜色配置以及数据形状（而非原始值）
+        - 关键 layout 配置（barmode、legend 等）
+
+        这确保 AI 在收到大型图表时仍能准确理解并修改。
+        """
+        lines = []
+
+        # ── Trace 信息 ──
+        traces = chart.get("data", [])
+        if isinstance(traces, list) and traces:
+            trace_types = {}
+            for t in traces:
+                ttype = t.get("type", "unknown")
+                trace_types[ttype] = trace_types.get(ttype, 0) + 1
+            type_desc = "、".join(f"{v} 个 {k}" for k, v in trace_types.items())
+            lines.append(f"Trace 概览：共 {len(traces)} 个 trace（{type_desc}）")
+
+            for i, trace in enumerate(traces):
+                if i >= 12:  # 最多描述 12 个 trace，防止 prompt 过长
+                    lines.append(f"  ...（还有 {len(traces) - 12} 个 trace，已省略）")
+                    break
+                ttype = trace.get("type", "scatter")
+                name = trace.get("name", f"trace-{i}")
+                lines.append(f"  Trace[{i}]：类型={ttype}，名称=\"{name}\"")
+
+                # 颜色信息
+                marker = trace.get("marker", {})
+                if isinstance(marker, dict):
+                    mc = marker.get("color")
+                    if mc:
+                        if isinstance(mc, (list, tuple)):
+                            lines.append(f"    marker.color=[{len(mc)}个值]")
+                        else:
+                            lines.append(f"    marker.color={mc}")
+                line_cfg = trace.get("line", {})
+                if isinstance(line_cfg, dict) and line_cfg.get("color"):
+                    lines.append(f"    line.color={line_cfg['color']}")
+
+                # 数据形状（不输出原始值，避免 prompt 过长）
+                for axis in ["x", "y", "z", "values", "labels"]:
+                    arr = trace.get(axis)
+                    if isinstance(arr, (list, tuple)):
+                        sample = [str(v) for v in arr[:3]]
+                        lines.append(f"    {axis}：{len(arr)} 个值，前3={sample}…")
+                    elif arr is not None:
+                        lines.append(f"    {axis}={arr}")
+        else:
+            lines.append("Trace 概览：无 trace 数据")
+
+        # ── Layout 信息 ──
+        layout = chart.get("layout", {})
+        if isinstance(layout, dict):
+            title = layout.get("title")
+            if title:
+                title_text = title.get("text", str(title)) if isinstance(title, dict) else title
+                lines.append(f"标题：{title_text}")
+
+            for axis_key, axis_label in [("xaxis", "X 轴"), ("yaxis", "Y 轴")]:
+                axis = layout.get(axis_key, {})
+                if isinstance(axis, dict):
+                    at = axis.get("title")
+                    if at:
+                        at_text = at.get("text", str(at)) if isinstance(at, dict) else at
+                        lines.append(f"{axis_label}标题：{at_text}")
+                    # 轴类型
+                    atype = axis.get("type")
+                    if atype:
+                        lines.append(f"{axis_label}类型：{atype}")
+
+            barmode = layout.get("barmode")
+            if barmode:
+                lines.append(f"barmode：{barmode}")
+
+            # legend 存在性
+            if layout.get("showlegend") is True:
+                lines.append("图例：显示")
+            elif layout.get("showlegend") is False:
+                lines.append("图例：隐藏")
+
+            # annotations / shapes 数量
+            ann_count = len(layout.get("annotations", []))
+            shape_count = len(layout.get("shapes", []))
+            if ann_count:
+                lines.append(f"标注数量：{ann_count}")
+            if shape_count:
+                lines.append(f"形状数量：{shape_count}")
+
         return "\n".join(lines)
 
     def _extract_code(self, text: str) -> str | None:

@@ -217,11 +217,14 @@ function appendMessage(role, content) {
     if (role === "assistant" && window.marked) {
         bodyHtml = marked.parse(content);
     }
-    // 必须用 div（块级），用 span 会导致 marked 生成的 <p> 被浏览器弹出到外部，
-    // 变成宽度为 0 的 flex 项，内容不可见。
+    // chat-msg 使用 display:flex 水平排列角色徽章和内容。
+    // chat-msg-content 作为垂直 flex 容器包裹技能徽章、证据表和回答正文，
+    // 避免三者被 flex 水平排列挤成窄条。
     div.innerHTML = `
         <span class="badge ${badgeClass} me-2">${label}</span>
-        <div class="chat-msg-body">${bodyHtml}</div>
+        <div class="chat-msg-content">
+            <div class="chat-msg-body">${bodyHtml}</div>
+        </div>
     `;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;

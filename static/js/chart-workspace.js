@@ -62,12 +62,16 @@ function generateChart() {
     var btn = document.getElementById('chart-send-btn');
     btn.disabled = true;
 
+    // 清理 previous_chart：剥离 template、压缩大数据数组，避免
+    // 完整 Plotly JSON（可超过 100KB）被后端截断后 AI 无法理解。
+    var cleanedChart = _preparePreviousChart(_currentChartData);
+
     fetch('/api/chart/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             description: description,
-            previous_chart: _currentChartData,
+            previous_chart: cleanedChart,
         }),
     })
         .then(function (r) { return r.json(); })
@@ -120,6 +124,69 @@ function quickChartAction(action) {
     document.getElementById('chart-input').value = prompt;
     _currentChartCode = '';
     generateChart();
+}
+
+/**
+ * 清理图表数据后再作为 previous_chart 发送。
+ * 完整 Plotly JSON 可能包含巨大的 template 对象和全量数据数组
+ * （x/y 值可达数千个），直接发送会被后端截断导致 AI 无法理解。
+ *
+ * 清理策略：
+ * 1. 剥离 layout.template（Plotly 默认模板，可达 50KB+）
+ * 2. 对 trace 中的长数组保留前 5 + 后 2 个采样值
+ * 3. 保留所有结构性信息（trace 类型、名称、颜色、轴配置等）
+ *
+ * @param {object|null} chartData - 原始 Plotly JSON
+ * @returns {object|null} 清理后的紧凑图表数据
+ */
+function _preparePreviousChart(chartData) {
+    if (!chartData) return null;
+
+    // 简易深克隆（Plotly JSON 不含函数/Date，JSON 往返安全且快速）
+    var cleaned;
+    try {
+        cleaned = JSON.parse(JSON.stringify(chartData));
+    } catch (e) {
+        return null;
+    }
+
+    // 1. 剥离 template
+    if (cleaned.layout && cleaned.layout.template) {
+        delete cleaned.layout.template;
+    }
+
+    // 2. 压缩 trace 数据数组
+    var dataArrayKeys = ['x', 'y', 'z', 'values', 'labels',
+                          'lat', 'lon', 'locations', 'text',
+                          'customdata', 'hovertext'];
+    var MAX_SAMPLE = 5;  // 保留前 N 个值
+
+    var traces = (cleaned.data !== undefined) ? (cleaned.data || []) : [];
+    if (Array.isArray(traces)) {
+        for (var t = 0; t < traces.length; t++) {
+            var trace = traces[t];
+            if (!trace || typeof trace !== 'object') continue;
+
+            for (var k = 0; k < dataArrayKeys.length; k++) {
+                var key = dataArrayKeys[k];
+                var arr = trace[key];
+                if (Array.isArray(arr) && arr.length > MAX_SAMPLE + 3) {
+                    // 保留前 MAX_SAMPLE 和后 2 个值作为样本
+                    var sampled = arr.slice(0, MAX_SAMPLE);
+                    sampled.push('…');  // 标记截断位置
+                    sampled.push(arr[arr.length - 2]);
+                    sampled.push(arr[arr.length - 1]);
+                    // 在数组中添加元信息标记长度
+                    trace[key] = sampled;
+                    // 用 __truncated 标记原始长度
+                    if (!trace.__truncated) trace.__truncated = {};
+                    trace.__truncated[key] = arr.length;
+                }
+            }
+        }
+    }
+
+    return cleaned;
 }
 
 /**
