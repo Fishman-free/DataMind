@@ -25,6 +25,7 @@ datasets/*.xlsx
 datasets/*.csv
 datasets/*.xls
 uploads/
+datasets/.chat_history.json
 
 # ── 根目录遗留的临时文件 ───────────────────────────────────────
 *.crdownload
