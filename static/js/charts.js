@@ -576,12 +576,15 @@ function _plotBar(el, data, layout, opts) {
 
 function _plotBarGrouped(el, data, layout, opts) {
     if (!Array.isArray(data) || data.length === 0) return;
-    const steps   = data.map(function(d) { return d.step; });
-    const removed = data.map(function(d) { return d.removed || 0; });
+    // 后端 pipeline_stages 每项键为 stage / rows / label（data/analyzer.py），
+    // 不是 step / removed，键名不匹配会导致 x 全 undefined、y 全 0 → 空图。
+    const stages = data.map(function(d) { return d.stage; });
+    const rows   = data.map(function(d) { return d.rows || 0; });
+    const labels = data.map(function(d) { return d.label != null ? d.label : String(d.rows || 0); });
     Plotly.react(el, [{
-        type: 'bar', x: steps, y: removed,
-        marker: { color: removed.map(function(v) { return v > 0 ? 'rgba(255,120,80,0.8)' : 'rgba(0,212,100,0.8)'; }) },
-        text: removed.map(function(v) { return v > 0 ? v + ' 行' : '无变化'; }),
+        type: 'bar', x: stages, y: rows,
+        marker: { color: 'rgba(79,159,255,0.8)' },
+        text: labels,
         textposition: 'auto',
     }], layout, opts);
     _safeResize(el);

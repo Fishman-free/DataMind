@@ -299,13 +299,31 @@ _IMPORT_RE = re.compile(
 
 
 def _json_serial(obj: Any) -> Any:
-    """json.dumps default 回调：将 numpy 类型转为 Python 原生类型。"""
+    """json.dumps default 回调：将 numpy / datetime 类型转为 Python 原生类型。"""
+    from datetime import date, datetime, time
+
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, np.integer):
         return int(obj)
     if isinstance(obj, np.floating):
         return float(obj)
+    if isinstance(obj, (np.datetime64, np.timedelta64)):
+        return str(obj)
+    # datetime 类型
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    # pandas Timestamp
+    try:
+        import pandas as pd
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+    except ImportError:
+        pass
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 

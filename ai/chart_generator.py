@@ -259,7 +259,7 @@ class ChartGenerator:
 
     def _execute_chart_code(self, code: str, df: pd.DataFrame) -> dict:
         """在沙箱中执行图表代码并序列化结果。"""
-        from ai.code_generator import _SAFE_BUILTINS, _FORBIDDEN
+        from ai.code_generator import _SAFE_BUILTINS, _FORBIDDEN, _plotly_fig_to_dict
 
         # 安全检查
         for keyword in _FORBIDDEN:
@@ -293,17 +293,19 @@ class ChartGenerator:
                     "explanation": "代码执行完成但未生成 chart 变量，请确保图表对象赋值给 `chart`",
                 }
 
-            # 序列化 Plotly Figure
-            try:
-                chart_json = chart.to_plotly_json()
-            except AttributeError:
+            # 序列化 Plotly Figure：先解码 plotly 5.x 的 Base64 二进制数组编码
+            # （{"dtype": "f8", "bdata": "<base64>"}），与聊天路径保持一致。
+            # 若直接用 to_plotly_json()，旧版 Plotly.js 无法解码 bdata，会把 x/y
+            # 当成空对象 → 散点图只剩空白坐标轴。再叠加 _sanitize_numpy 处理 datetime。
+            if hasattr(chart, "to_dict"):
+                chart_json = _sanitize_numpy(_plotly_fig_to_dict(chart))
+            elif hasattr(chart, "to_plotly_json"):
+                chart_json = _sanitize_numpy(chart.to_plotly_json())
+            else:
                 return {
                     "success": False,
                     "explanation": "chart 变量不是有效的 Plotly Figure 对象",
                 }
-
-            # 递归清理 numpy 类型，确保 JSON 可序列化
-            chart_json = _sanitize_numpy(chart_json)
 
             return {
                 "success": True,
@@ -326,8 +328,10 @@ class ChartGenerator:
 # ── 工具函数 ──────────────────────────────────────────────
 
 def _sanitize_numpy(obj: Any) -> Any:
-    """递归遍历对象，将 numpy 类型转为 Python 原生类型，确保 JSON 可序列化。"""
+    """递归遍历对象，将 numpy 和 datetime 类型转为 Python 原生类型，确保 JSON 可序列化。"""
     import numpy as np
+    from datetime import date, datetime, time
+
     if isinstance(obj, dict):
         return {k: _sanitize_numpy(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -340,4 +344,21 @@ def _sanitize_numpy(obj: Any) -> Any:
         return _sanitize_numpy(obj.tolist())
     if isinstance(obj, (np.bool_,)):
         return bool(obj)
+    # datetime 类型：统一转为 ISO 8601 字符串
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    # numpy datetime64 / timedelta64
+    if isinstance(obj, (np.datetime64, np.timedelta64)):
+        return str(obj)
+    # pandas Timestamp（继承自 datetime，但显式检查避免遗漏边界情况）
+    try:
+        import pandas as pd
+        if isinstance(obj, (pd.Timestamp, pd.Timedelta)):
+            return obj.isoformat() if isinstance(obj, pd.Timestamp) else str(obj)
+    except ImportError:
+        pass
     return obj

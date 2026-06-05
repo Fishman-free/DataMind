@@ -530,10 +530,11 @@ class TestSSEStream:
         assert "data: [DONE]" in chunks[-1]
 
     def test_sse_stream_non_serializable_data(self, app):
-        """生成器 yield 不可序列化对象时不会崩溃，并产生 error 事件。"""
+        """生成器 yield 不可序列化对象时被 default=str 安全网兜底，不会崩溃。"""
         def non_serializable_gen():
             yield {"type": "start"}
-            # 带 datetime 的 dict 不能直接 json.dumps
+            # 带 datetime 的 dict 会被 default=str 安全网转为字符串，
+            # 流不会中断，也不会产生 error 事件（这正是安全网的意义）
             from datetime import datetime
             yield {"type": "bad", "timestamp": datetime.now()}
 
@@ -547,11 +548,14 @@ class TestSSEStream:
                 chunks.append(decoded)
 
         full = "".join(chunks)
-        # 第一条正常数据成功
+        # 所有数据都成功序列化
         assert '"type": "start"' in full
-        # 不可序列化数据触发 error 事件
-        assert '"type": "error"' in full
-        # 以 [DONE] 结尾，不会挂起
+        assert '"type": "bad"' in full
+        # datetime 被 default=str 安全网转为字符串
+        assert '"timestamp":' in full
+        # 无错误事件 — 安全网防止了崩溃
+        assert '"type": "error"' not in full
+        # 以 [DONE] 正常结尾
         assert "data: [DONE]" in chunks[-1]
 
 

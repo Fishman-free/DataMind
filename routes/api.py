@@ -61,7 +61,7 @@ def _sse_stream(generator_func, *args, **kwargs):
     def _generate():
         try:
             for chunk in generator_func(*args, **kwargs):
-                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps(chunk, ensure_ascii=False, default=str)}\n\n"
             yield "data: [DONE]\n\n"
         except GeneratorExit:
             raise
@@ -472,7 +472,7 @@ def adaptive_charts():
     viz = az.preprocess_visual(pp_report)
     charts.append({"type": "bar_grouped", "title": "数据清洗行数变化",
                    "data": viz.get("pipeline_stages", []), "source": "preprocess",
-                   "x_label": "行数", "y_label": "处理阶段"})
+                   "x_label": "处理阶段", "y_label": "行数"})
 
     return jsonify(charts)
 
