@@ -1,0 +1,14 @@
+# DataMind 生产依赖（不含测试工具）
+# 用于 Docker 生产镜像构建
+flask>=3.0
+pandas>=2.0
+numpy>=1.24
+openai>=1.0
+plotly>=5.0
+chardet>=5.0
+openpyxl>=3.1
+python-calamine>=0.1
+markdown>=3.5
+matplotlib>=3.7
+seaborn>=0.13
+gunicorn>=22.0

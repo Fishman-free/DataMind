@@ -29,8 +29,8 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"] = config.SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = config.MAX_FILE_SIZE
     app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
-    # 开发模式禁用静态文件浏览器缓存，确保 JS/CSS 修改立即生效
-    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+    # 生产模式启用 7 天静态文件缓存；开发模式禁用缓存确保修改立即生效
+    app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0 if config.DEBUG else 7 * 24 * 3600
 
     # 将全局状态挂到 app 上，方便蓝图访问
     app.state = app_state  # type: ignore[attr-defined]

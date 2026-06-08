@@ -30,7 +30,7 @@
 
 | 工具 | 用途 | 使用频率 |
 |------|------|----------|
-| **Claude Code** (Claude sonnet 4.6 + deepseek v4 pro) | 代码生成、架构设计、Bug 修复、测试编写 | 日常高频使用 |
+| **Claude Code** (Claude opus 4.8+Claude sonnet 4.6 + deepseek v4 pro) | 代码生成、架构设计、Bug 修复、测试编写 | 日常高频使用 |
 | **Context7 MCP** | 查阅 pandas、plotly、Flask 等库的官方文档 | 按需查询 |
 | **Playwright MCP** | 浏览器自动化测试前端交互 | 调试前端时使用 |
 | **GitHub MCP** | 代码仓库管理、Commit 历史查询 | 版本管理 |

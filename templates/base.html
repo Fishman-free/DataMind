@@ -142,20 +142,22 @@
     hero-bg 常驻环境背景视频 (z-index: 0)
     全局所有页面均显示，screen 混合模式令暗色背景消融，
     为整个 app 营造科技氛围感。
+    preload="none" + data-src：splash 退出后由 JS 懒加载，减少首屏流量。
 -->
 <div class="app-video-bg" aria-hidden="true">
-    <video autoplay muted loop playsinline preload="auto">
-        <source src="{{ url_for('static', filename='videos/hero-bg.mp4') }}" type="video/mp4">
+    <video autoplay muted loop playsinline preload="none">
+        <source data-src="{{ url_for('static', filename='videos/hero-bg.mp4') }}" type="video/mp4">
     </video>
 </div>
 
 <!--
     机械女孩赛博朋克背景视频 (z-index: 1)
     右侧人物全息投影，mix-blend-mode: screen。
+    同样懒加载，splash 退出后触发。
 -->
 <div class="mech-video-bg" aria-hidden="true">
-    <video autoplay muted loop playsinline preload="auto">
-        <source src="{{ url_for('static', filename='videos/mech-girl.mp4') }}" type="video/mp4">
+    <video autoplay muted loop playsinline preload="none">
+        <source data-src="{{ url_for('static', filename='videos/mech-girl.mp4') }}" type="video/mp4">
     </video>
     <div class="mech-scanlines"></div>
     <div class="mech-glow-edge"></div>
@@ -341,11 +343,23 @@
   var STORAGE_KEY = 'dm_splash_shown';
   var splash = document.getElementById('hero-splash');
 
+  /* 懒加载背景视频：将 data-src 还原为 src 触发浏览器加载 */
+  function loadBgVideos() {
+    document.querySelectorAll('.app-video-bg source[data-src], .mech-video-bg source[data-src]').forEach(function (s) {
+      s.setAttribute('src', s.getAttribute('data-src'));
+      s.removeAttribute('data-src');
+      s.parentElement.load();
+    });
+  }
+
   /*
    * 若 <head> 早期脚本已检测到标记，splash 的 display 已由 CSS 隐藏，
-   * 此处无需再处理，直接退出。
+   * 此处无需再处理，直接加载背景视频并退出。
    */
-  if (document.documentElement.classList.contains('dm-no-splash')) return;
+  if (document.documentElement.classList.contains('dm-no-splash')) {
+    loadBgVideos();
+    return;
+  }
 
   /*
    * 首次访问：
@@ -358,7 +372,10 @@
   /* "进入系统" 按钮：停留当前页，退场动效后隐藏遮罩 */
   function dismissSplash() {
     splash.classList.add('exit');
-    setTimeout(function () { splash.style.display = 'none'; }, 880);
+    setTimeout(function () {
+      splash.style.display = 'none';
+      loadBgVideos();
+    }, 880);
   }
 
   document.getElementById('hero-enter-nav').addEventListener('click', dismissSplash);

@@ -1150,3 +1150,10 @@ def plan_generate():
     insights = state["insights"] or []
     plan = pg.generate(summary, insights)
     return jsonify(plan)
+
+
+# ── 健康检查（供 Nginx / Docker / 监控探活）──────────────────
+@api_bp.route("/health")
+def health():
+    """返回服务状态，不依赖任何运行时数据。"""
+    return jsonify({"status": "ok", "version": "3.2.0"})
