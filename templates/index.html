@@ -189,17 +189,17 @@
         <!-- 预处理可视化图表 -->
         <div id="preprocess-viz" class="px-4 pb-3" style="display:none">
             <div class="row g-3 mt-1">
-                <div class="col-12 col-md-6">
+                <div class="col-12">
                     <div style="font-size:0.8em;color:var(--blue);margin-bottom:4px">
                         <i class="bi bi-bar-chart-steps me-1"></i>清洗前后数据量对比
                     </div>
-                    <div id="chart-preprocess-ba" style="height:160px;overflow:hidden"></div>
+                    <div id="chart-preprocess-ba" style="height:170px;overflow:hidden"></div>
                 </div>
-                <div class="col-12 col-md-6">
+                <div class="col-12">
                     <div style="font-size:0.8em;color:var(--cyan);margin-bottom:4px">
                         <i class="bi bi-table me-1"></i>各列缺失率
                     </div>
-                    <div id="chart-missing-heatmap" style="height:160px;overflow:hidden"></div>
+                    <div id="chart-missing-heatmap" style="height:170px;overflow:hidden"></div>
                 </div>
             </div>
         </div>
@@ -740,19 +740,20 @@ async function loadPreprocessViz() {
                 y: rows,
                 marker: { color: colors },
                 text: rows.map(v => v.toLocaleString() + ' 行'),
-                textposition: 'outside',
+                textposition: 'auto',
                 textfont: { size: 10, color: 'rgba(255,255,255,0.7)' },
                 cliponaxis: false,
             }], {
                 paper_bgcolor: 'transparent',
                 plot_bgcolor:  'transparent',
-                height: 155,
+                height: 165,
                 font:   { color: '#fff', size: 10 },
-                margin: { t: 28, b: 28, l: 52, r: 10 },
+                margin: { t: 38, b: 28, l: 52, r: 10 },
+                bargap: 0.5,
                 yaxis: {
                     gridcolor:  'rgba(255,255,255,0.06)',
                     tickformat: ',d',
-                    range: [0, maxR * 1.18],
+                    range: [0, maxR * 1.25],
                 },
                 xaxis: { tickfont: { size: 10 } },
                 showlegend: false,

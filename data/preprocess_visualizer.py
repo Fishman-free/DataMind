@@ -1,15 +1,114 @@
+"""
+预处理可视化模块。
+
+使用 matplotlib + seaborn 生成 5 张诊断图的 base64 PNG，
+用于前端仪表盘展示数据预处理效果。
+
+来源：学生+AI
+"""
 from __future__ import annotations
-import base64, io
+import base64, io, json, os, time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import matplotlib.patches as mpatches
 import numpy as np
 import pandas as pd
 import seaborn as sns
 
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
+
+# ── 中文字体初始化 ────────────────────────────────────────────
+# 清除过期缓存 + 显式注册中文字体，确保 macOS / Windows / Linux / Docker 全平台可用
+
+def _build_cn_font() -> fm.FontProperties:
+    """
+    重建字体缓存并返回一个可用的中文字体 FontProperties。
+
+    策略：
+    1. 删除超过 30 天或缺少中文字体条目的 matplotlib 字体缓存
+    2. 强制 matplotlib 重建字体列表
+    3. 按优先级搜索可用的 CJK 字体
+    4. 设置 rcParams 并返回 FontProperties 供所有文本元素使用
+    """
+    # 1. 按需清除过期缓存
+    cache_dir = matplotlib.get_cachedir()
+    try:
+        cache_files = [f for f in os.listdir(cache_dir)
+                       if f.startswith('fontlist-v') and f.endswith('.json')]
+    except FileNotFoundError:
+        cache_files = []
+
+    need_rebuild = False
+    if cache_files:
+        cache_path = os.path.join(cache_dir, cache_files[0])
+        cache_age = time.time() - os.path.getmtime(cache_path)
+        # 超过 30 天，或缓存文件过小（可能损坏）
+        if cache_age > 30 * 86400 or os.path.getsize(cache_path) < 1000:
+            need_rebuild = True
+        else:
+            # 检查缓存中是否包含中文字体条目
+            try:
+                with open(cache_path, 'rb') as fh:
+                    data = json.load(fh)
+                has_cjk = any(
+                    kw in font.get('name', '')
+                    for font in data.get('ttflist', [])
+                    for kw in ['YaHei', 'SimHei', 'SimSun', 'KaiTi', 'FangSong']
+                )
+                if not has_cjk:
+                    need_rebuild = True
+            except (json.JSONDecodeError, KeyError):
+                need_rebuild = True
+
+    if need_rebuild:
+        for fn in cache_files:
+            try:
+                os.remove(os.path.join(cache_dir, fn))
+            except OSError:
+                pass
+        # 触发字体管理器重建
+        fm._load_fontmanager(try_read_cache=False)
+
+    # 2. 按优先级搜索可用的中文字体
+    cjk_candidates = [
+        'Microsoft YaHei',   # Windows（最常用）
+        'SimHei',             # Windows（黑体）
+        'SimSun',             # Windows（宋体）
+        'KaiTi',              # Windows（楷体）
+        'FangSong',           # Windows（仿宋）
+        'PingFang SC',        # macOS
+        'Heiti SC',           # macOS
+        'STHeiti',            # macOS
+        'Noto Sans CJK SC',   # Linux / Docker
+        'WenQuanYi Micro Hei',# Linux
+        'WenQuanYi Zen Hei',  # Linux
+        'Noto Sans SC',       # Linux
+    ]
+
+    cn_name = 'DejaVu Sans'  # 最终兜底（无中文 glyphs）
+    for name in cjk_candidates:
+        for f in fm.fontManager.ttflist:
+            if f.name == name:
+                cn_name = name
+                break
+        if cn_name == name:
+            break
+
+    # 3. 设置全局 rcParams
+    plt.rcParams['font.sans-serif'] = [cn_name] + [
+        n for n in cjk_candidates if n != cn_name
+    ] + ['DejaVu Sans']
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['axes.unicode_minus'] = False
+
+    # 4. 返回 FontProperties 供显式使用
+    return fm.FontProperties(family=cn_name)
+
+
+_CN_FONT = _build_cn_font()
+
+# ── 赛博朋克配色常量 ──────────────────────────────────────────
 
 _BG = '#0d1117'
 _GRID = '#1e3a5f'
@@ -53,14 +152,18 @@ class PreprocessVisualizer:
         cmap = ['#1e3a5f', _W] if mm.values.any() else [_OK, _OK]
         data = mm if mm.values.any() else pd.DataFrame(False, index=df.index, columns=df.columns)
         sns.heatmap(data, ax=ax, cbar=False, cmap=cmap, xticklabels=True, yticklabels=False)
-        ax.set_title('原始数据缺失值分布热力图', color=_TXT, fontsize=13, pad=10)
-        ax.set_xlabel('列名', color=_TXT)
-        ax.set_ylabel('样本行（采样）', color=_TXT)
+        ax.set_title('原始数据缺失值分布热力图', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
+        ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
+        ax.set_ylabel('样本行（采样）', color=_TXT, fontproperties=_CN_FONT)
         ax.tick_params(colors=_TXT, labelsize=8)
         plt.xticks(rotation=30, ha='right')
+        # 为 seaborn heatmap 的 xticklabels 显式设置字体
+        for label in ax.get_xticklabels():
+            label.set_fontproperties(_CN_FONT)
         ax.legend(handles=[mpatches.Patch(color='#1e3a5f', label='有值'),
                             mpatches.Patch(color=_W, label='缺失')],
-                  loc='upper right', facecolor=_BG, labelcolor=_TXT, fontsize=8)
+                  loc='upper right', facecolor=_BG, labelcolor=_TXT,
+                  prop=_CN_FONT, fontsize=8)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -83,11 +186,15 @@ class PreprocessVisualizer:
         bars = ax.barh(stages, rows, color=[_A, '#9B8EA8', _OK], height=0.5, edgecolor='none')
         for bar, val in zip(bars, rows):
             ax.text(bar.get_width() + max(rows)*0.01, bar.get_y()+bar.get_height()/2,
-                    str(val) + ' 行', va='center', ha='left', color=_TXT, fontsize=10)
-        ax.set_title('预处理流水线行数变化', color=_TXT, fontsize=13, pad=10)
-        ax.set_xlabel('行数', color=_TXT)
-        ax.set_ylabel('处理阶段', color=_TXT)
+                    str(val) + ' 行', va='center', ha='left', color=_TXT, fontsize=10,
+                    fontproperties=_CN_FONT)
+        ax.set_title('预处理流水线行数变化', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
+        ax.set_xlabel('行数', color=_TXT, fontproperties=_CN_FONT)
+        ax.set_ylabel('处理阶段', color=_TXT, fontproperties=_CN_FONT)
         ax.tick_params(colors=_TXT)
+        # 为 Y 轴刻度标签显式设置中文字体
+        for label in ax.get_yticklabels():
+            label.set_fontproperties(_CN_FONT)
         ax.spines[:].set_color(_GRID)
         ax.set_xlim(0, max(rows)*1.18)
         ax.xaxis.grid(True, color=_GRID, linewidth=0.5)
@@ -109,18 +216,21 @@ class PreprocessVisualizer:
             sns.boxplot(data=self._clean[nc], ax=ax, palette=[_A]*len(nc),
                         flierprops={'marker': 'o', 'markerfacecolor': _W, 'markersize': 4, 'alpha': 0.6},
                         width=0.5)
-            ax.set_title('数值列异常值箱线图（IQR x1.5）', color=_TXT, fontsize=13, pad=10)
-            ax.set_xlabel('列名', color=_TXT)
-            ax.set_ylabel('数值', color=_TXT)
+            ax.set_title('数值列异常值箱线图（IQR x1.5）', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
+            ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
+            ax.set_ylabel('数值', color=_TXT, fontproperties=_CN_FONT)
             ax.tick_params(colors=_TXT, labelsize=9)
             ax.spines[:].set_color(_GRID)
             ax.yaxis.grid(True, color=_GRID, linewidth=0.5)
             ax.set_axisbelow(True)
             plt.xticks(rotation=20, ha='right')
+            # 为 X 轴刻度标签显式设置中文字体
+            for label in ax.get_xticklabels():
+                label.set_fontproperties(_CN_FONT)
         else:
             ax.text(0.5, 0.5, '无数值列', transform=ax.transAxes,
-                    ha='center', va='center', color=_TXT)
-            ax.set_title('数值列异常值箱线图', color=_TXT, fontsize=13)
+                    ha='center', va='center', color=_TXT, fontproperties=_CN_FONT)
+            ax.set_title('数值列异常值箱线图', color=_TXT, fontsize=13, fontproperties=_CN_FONT)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -155,8 +265,8 @@ class PreprocessVisualizer:
             a.set_fontweight('bold')
         ax.legend(wedges, [l + '（' + str(s) + ' 列）' for l, s in zip(lb, sz)],
                   loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=2,
-                  facecolor=_BG, labelcolor=_TXT, fontsize=9)
-        ax.set_title('列数据类型分布', color=_TXT, fontsize=13, pad=10)
+                  facecolor=_BG, labelcolor=_TXT, prop=_CN_FONT, fontsize=9)
+        ax.set_title('列数据类型分布', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -173,8 +283,8 @@ class PreprocessVisualizer:
         ax.set_facecolor(_BG)
         if not mi:
             ax.text(0.5, 0.5, '无缺失值需填充', transform=ax.transAxes,
-                    ha='center', va='center', color=_OK, fontsize=14)
-            ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13)
+                    ha='center', va='center', color=_OK, fontsize=14, fontproperties=_CN_FONT)
+            ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, fontproperties=_CN_FONT)
             ax.axis('off')
             plt.tight_layout()
             img = self._b64(fig)
@@ -190,17 +300,17 @@ class PreprocessVisualizer:
             h = bar.get_height()
             if h > 0:
                 ax.text(bar.get_x()+bar.get_width()/2, h+max(before)*0.02, str(int(h)),
-                        ha='center', va='bottom', color=_TXT, fontsize=9)
-        ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, pad=10)
-        ax.set_xlabel('列名', color=_TXT)
-        ax.set_ylabel('缺失单元格数', color=_TXT)
+                        ha='center', va='bottom', color=_TXT, fontsize=9, fontproperties=_CN_FONT)
+        ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
+        ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
+        ax.set_ylabel('缺失单元格数', color=_TXT, fontproperties=_CN_FONT)
         ax.set_xticks(x)
-        ax.set_xticklabels(cols, rotation=20, ha='right', color=_TXT, fontsize=9)
+        ax.set_xticklabels(cols, rotation=20, ha='right', color=_TXT, fontsize=9, fontproperties=_CN_FONT)
         ax.tick_params(colors=_TXT)
         ax.spines[:].set_color(_GRID)
         ax.yaxis.grid(True, color=_GRID, linewidth=0.5)
         ax.set_axisbelow(True)
-        ax.legend(facecolor=_BG, labelcolor=_TXT, fontsize=9)
+        ax.legend(facecolor=_BG, labelcolor=_TXT, prop=_CN_FONT, fontsize=9)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
