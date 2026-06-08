@@ -308,33 +308,23 @@ createSSEConnection({ url, body, handlers, onError })
 3. [目录结构](#3-目录结构)
 4. [环境准备](#4-环境准备)
 5. [快速启动](#5-快速启动)
-6. [云服务器部署（小白教程）](#6-云服务器部署小白教程)
-   - [6.1 连接服务器](#61-第一步连接服务器)
-   - [6.2 安装 Docker](#62-第二步安装-docker)
-   - [6.3 上传项目代码](#63-第三步上传项目代码)
-   - [6.4 配置环境变量](#64-第四步配置环境变量)
-   - [6.5 启动服务](#65-第五步启动服务)
-   - [6.6 验证访问](#66-第六步验证访问)
-   - [6.7 常用运维命令](#67-常用运维命令)
-   - [6.8 配置域名 + HTTPS](#68-配置域名--https可选但推荐)
-   - [6.9 部署架构图](#69-部署架构图)
-7. [使用说明](#7-使用说明)
-   - [7.1 上传数据](#71-上传数据)
-   - [7.2 数据概览页](#72-数据概览页)
-   - [7.3 智能问答页（SSE 流式）](#73-智能问答页sse-流式)
-   - [7.4 NL2Vis 图表工作台](#74-nl2vis-图表工作台)
-   - [7.5 可视化仪表盘](#75-可视化仪表盘)
-   - [7.6 分析报告页](#76-分析报告页)
-   - [7.7 智能分析计划](#77-智能分析计划)
-   - [7.8 数据质量评分卡](#78-数据质量评分卡)
-   - [7.9 数据叙事引擎](#79-数据叙事引擎)
-   - [7.10 右侧自动洞察面板](#710-右侧自动洞察面板)
-8. [API 接口参考](#8-api-接口参考)
-9. [配置说明](#9-配置说明)
-10. [测试说明](#10-测试说明)
-11. [版本历史](#11-版本历史)
-12. [常见问题](#12-常见问题)
-13. [技术架构](#13-技术架构)
+6. [使用说明](#7-使用说明)
+   - [6.1 上传数据](#71-上传数据)
+   - [6.2 数据概览页](#72-数据概览页)
+   - [6.3 智能问答页（SSE 流式）](#73-智能问答页sse-流式)
+   - [6.4 NL2Vis 图表工作台](#74-nl2vis-图表工作台)
+   - [6.5 可视化仪表盘](#75-可视化仪表盘)
+   - [6.6 分析报告页](#76-分析报告页)
+   - [6.7 智能分析计划](#77-智能分析计划)
+   - [6.8 数据质量评分卡](#78-数据质量评分卡)
+   - [6.9 数据叙事引擎](#79-数据叙事引擎)
+   - [6.10 右侧自动洞察面板](#710-右侧自动洞察面板)
+7. [API 接口参考](#8-api-接口参考)
+8. [配置说明](#9-配置说明)
+9. [测试说明](#10-测试说明)
+10. [版本历史](#11-版本历史)
+11. [常见问题](#12-常见问题)
+12. [技术架构](#13-技术架构)
 
 ---
 
@@ -613,320 +603,66 @@ ollama serve
 
 ## 5. 快速启动
 
+### 方式一：本地 Python 运行（开发/演示）
+
 ```bash
-# 从 GitHub 克隆后进入项目目录（如果已经在目录内则跳过）
 cd DataMind
+pip install -r requirements.txt
 python app.py
 ```
 
-控制台输出：
+浏览器访问：**http://localhost:5000**
 
-```
- * Running on http://0.0.0.0:5000
- * Debug mode: on
-```
-
-打开浏览器访问：**http://localhost:5000**
-
-> 首次访问会加载 Google Fonts CDN（Instrument Serif / Barlow / JetBrains Mono），国内网络可能需要数秒。若字体加载慢，可将 `base.html` 中 Google Fonts `<link>` 替换为本地字体文件。
-
----
-
-## 6. 云服务器部署（小白教程）
-
-> 本节面向没有服务器部署经验的用户，手把手教你把 DataMind 部署到云服务器，让任何人都能通过公网访问。
-
-### 6.0 前置条件
-
-| 条件 | 说明 | 参考价格 |
-|------|------|---------|
-| 一台云服务器 | 推荐 2 核 4 GB 内存，Ubuntu 22.04 / CentOS 8 | 阿里云 ~50 元/月、腾讯云 ~40 元/月 |
-| 一个域名（可选） | 用于 HTTPS 访问，如 `datamind.example.com` | .com 域名 ~60 元/年 |
-| SSH 工具 | Windows 用 PowerShell / Terminal，macOS/Linux 用终端 | 免费 |
-
-### 6.1 第一步：连接服务器
+### 方式二：Docker 一键部署（生产推荐）
 
 ```bash
-# 替换 123.45.67.89 为你服务器的公网 IP
-ssh root@123.45.67.89
-```
-
-首次连接会提示 `Are you sure you want to continue connecting?`，输入 `yes` 回车，然后输入密码（输入时不会显示字符，输完回车即可）。
-
-### 6.2 第二步：安装 Docker
-
-**Ubuntu 系统：**
-
-```bash
-# 一键安装 Docker
-curl -fsSL https://get.docker.com | sh
-
-# 启动 Docker 并设置开机自启
-sudo systemctl start docker
-sudo systemctl enable docker
-
-# 验证安装成功（应显示 Docker 版本号）
-docker --version
-```
-
-**CentOS 系统：**
-
-```bash
-sudo yum install -y yum-utils
-sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-sudo yum install -y docker-ce docker-ce-cli containerd.io
-sudo systemctl start docker
-sudo systemctl enable docker
-docker --version
-```
-
-### 6.3 第三步：上传项目代码
-
-**方式一：从 GitHub 克隆（推荐）**
-
-```bash
-# 安装 git（如果没有）
-sudo apt install -y git      # Ubuntu
-# sudo yum install -y git    # CentOS
-
-# 克隆项目
-git clone https://github.com/你的用户名/DataMind.git
-cd DataMind
-```
-
-**方式二：用 scp 上传本地文件**
-
-```bash
-# 在你的电脑上执行（不是服务器）
-scp -r C:\Users\你的用户名\Desktop\DataMind root@123.45.67.89:/root/DataMind
-```
-
-### 6.4 第四步：配置环境变量
-
-```bash
-# 进入项目目录
-cd /root/DataMind
-
-# 创建环境变量文件
+# 创建 .env 配置文件
 cat > .env << 'EOF'
 AI_API_KEY=sk-你的API密钥
 AI_BASE_URL=https://api.deepseek.com/v1
 AI_MODEL=deepseek-chat
-FLASK_SECRET_KEY=这里填一串随机字符比如datamind-prod-2026-secret
+FLASK_SECRET_KEY=datamind-prod-2026-secret
 FLASK_DEBUG=false
 EOF
-```
 
-**AI 服务商选择建议（按性价比排序）：**
-
-| 服务商 | 注册地址 | 推荐模型 | 特点 |
-|--------|---------|---------|------|
-| DeepSeek | platform.deepseek.com | `deepseek-chat` | 性价比最高，中文优秀 |
-| 通义千问 | dashscope.console.aliyun.com | `qwen-plus` | 阿里云出品，稳定 |
-| 硅基流动 | siliconflow.cn | `deepseek-ai/DeepSeek-V3` | 新用户送额度 |
-| OpenAI | platform.openai.com | `gpt-4o-mini` | 需海外信用卡 |
-
-> 不配置 AI 也能用！数据上传、清洗、质量评分、可视化仪表盘、自动洞察全部不需要 API Key。
-
-### 6.5 第五步：启动服务
-
-```bash
-# 构建并启动（首次需要几分钟下载依赖）
+# 构建并启动（Flask + Nginx 双容器）
 docker compose up -d --build
 
-# 查看运行状态（应显示两个容器都是 Up 状态）
+# 查看状态
 docker compose ps
 ```
 
-看到类似以下输出说明启动成功：
+浏览器访问：**http://localhost**
 
-```
-NAME                STATUS          PORTS
-datamind-datamind-1  Up (healthy)    5000/tcp
-datamind-nginx-1     Up              0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp
-```
+验证健康检查：`curl http://localhost/api/health` → `{"status": "ok", "version": "3.2.0"}`
 
-### 6.6 第六步：验证访问
+### 常用 Docker 命令
 
 ```bash
-# 在服务器上测试健康检查
-curl http://localhost/api/health
-# 应返回: {"status": "ok", "version": "3.2.0"}
+docker compose logs -f          # 查看日志
+docker compose restart           # 重启服务
+docker compose down              # 停止服务
+git pull && docker compose up -d --build   # 更新代码后重新部署
 ```
 
-然后在你的电脑浏览器中输入服务器 IP：
+### 部署架构
 
 ```
-http://123.45.67.89
+用户浏览器 → Nginx (80/443) → Flask + Gunicorn (5000) → datasets/
+              ├─ 视频直供        ├─ 2 worker 进程
+              ├─ 静态缓存 7 天    └─ 120s 超时
+              └─ SSE 流式代理
 ```
 
-看到 DataMind 赛博朋克首页即部署成功！
+> 不配置 AI 也能用！数据上传、清洗、质量评分、可视化仪表盘、自动洞察全部不需要 API Key。
 
-### 6.7 常用运维命令
-
-```bash
-# 查看日志（排查问题时用）
-docker compose logs -f
-
-# 重启服务
-docker compose restart
-
-# 停止服务
-docker compose down
-
-# 更新代码后重新部署
-git pull
-docker compose up -d --build
-
-# 查看磁盘使用
-df -h
-```
-
-### 6.8 配置域名 + HTTPS（可选但推荐）
-
-**第一步：购买域名并解析到服务器 IP**
-
-在域名服务商（阿里云/腾讯云/Cloudflare）添加 A 记录：
-- 主机记录：`@` 或 `www`
-- 记录值：你的服务器公网 IP
-
-**第二步：安装 Certbot 申请免费证书**
-
-```bash
-# Ubuntu
-sudo apt install -y certbot
-
-# 申请证书（替换 your-domain.com）
-sudo certbot certonly --standalone -d your-domain.com
-
-# 证书会保存在 /etc/letsencrypt/live/your-domain.com/
-```
-
-**第三步：修改 Nginx 配置启用 HTTPS**
-
-```bash
-# 编辑 nginx.conf
-nano nginx.conf
-```
-
-将内容替换为：
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name your-domain.com;
-
-    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
-
-    client_max_body_size 50M;
-
-    location /static/videos/ {
-        alias /usr/share/nginx/html/videos/;
-        expires 30d;
-        add_header Cache-Control "public, immutable";
-        access_log off;
-    }
-
-    location /static/ {
-        proxy_pass http://datamind:5000/static/;
-        expires 7d;
-        add_header Cache-Control "public";
-        access_log off;
-    }
-
-    location /api/ {
-        proxy_pass http://datamind:5000/api/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_buffering off;
-        proxy_cache off;
-        proxy_read_timeout 300s;
-    }
-
-    location / {
-        proxy_pass http://datamind:5000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 120s;
-    }
-}
-```
-
-**第四步：挂载证书目录并重启**
-
-编辑 `docker-compose.yml`，取消 nginx 服务中 SSL volume 的注释：
-
-```yaml
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./static/videos:/usr/share/nginx/html/videos:ro
-      - ./ssl:/etc/nginx/ssl:ro                  # 取消这行注释
-```
-
-将证书复制到项目目录并重启：
-
-```bash
-mkdir -p ssl
-cp /etc/letsencrypt/live/your-domain.com/* ssl/
-docker compose down
-docker compose up -d
-```
-
-现在可以通过 `https://your-domain.com` 安全访问了！
-
-**第五步：设置证书自动续期**
-
-```bash
-# 添加定时任务，每月自动续期
-sudo crontab -e
-# 在末尾添加：
-0 3 1 * * certbot renew --quiet && cp /etc/letsencrypt/live/your-domain.com/* /root/DataMind/ssl/ && cd /root/DataMind && docker compose restart nginx
-```
-
-### 6.9 部署架构图
-
-```
-用户浏览器
-    │
-    ▼
-┌─────────────────────────────────┐
-│  Nginx (端口 80/443)             │
-│  ├─ /static/videos/ → 直接提供   │  ← 视频不经过 Flask，速度快
-│  ├─ /static/        → 代理       │  ← CSS/JS 有 7 天缓存
-│  └─ /api/ 和 /      → 代理       │  ← SSE 流式支持
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│  Flask + Gunicorn (端口 5000)    │
-│  ├─ 2 个 worker 进程             │
-│  ├─ 120 秒超时                   │
-│  └─ 内存状态 (app_state)         │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────────┐
-│  datasets/ (volume 挂载)         │
-│  └─ 上传的数据文件持久化          │
-└─────────────────────────────────┘
-```
+> 首次访问会加载 Google Fonts CDN，国内网络可能需要数秒。若字体加载慢，可将 `base.html` 中 Google Fonts `<link>` 替换为本地字体文件。
 
 ---
 
-## 7. 使用说明
+## 6. 使用说明
 
-### 7.1 上传数据
+### 6.1 上传数据
 
 **方式一：点击上传**
 
@@ -952,7 +688,7 @@ sudo crontab -e
 
 ---
 
-### 7.2 数据概览页（`/`）
+### 6.2 数据概览页（`/`）
 
 上传成功后展示四部分内容：
 
@@ -993,7 +729,7 @@ sudo crontab -e
 
 ---
 
-### 7.3 智能问答页（SSE 流式）（`/analysis`）
+### 6.3 智能问答页（SSE 流式）（`/analysis`）
 
 > 此功能需要配置 AI API Key
 
@@ -1043,7 +779,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.4 NL2Vis 图表工作台（`/analysis` 右侧面板）
+### 6.4 NL2Vis 图表工作台（`/analysis` 右侧面板）
 
 > 此功能需要配置 AI API Key（无 Key 时隐藏入口）
 
@@ -1074,7 +810,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.5 可视化仪表盘（`/visualization`）
+### 6.5 可视化仪表盘（`/visualization`）
 
 6 个预置 Plotly 交互图表，上传数据后自动加载：
 
@@ -1100,7 +836,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.6 分析报告页（`/report`）
+### 6.6 分析报告页（`/report`）
 
 页面顶部提供**报告模式切换**，选择后点击「生成分析报告」。深度模式下报告以 **SSE 流式**生成，逐个 Agent 推送进度和内容。
 
@@ -1158,7 +894,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.7 智能分析计划
+### 6.7 智能分析计划
 
 > 此功能需要配置 AI API Key（无 Key 时使用规则引擎自动生成基础计划）
 
@@ -1178,7 +914,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.8 数据质量评分卡
+### 6.8 数据质量评分卡
 
 > 零 API 消耗，纯本地计算
 
@@ -1203,7 +939,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.9 数据叙事引擎
+### 6.9 数据叙事引擎
 
 > 此功能需要配置 AI API Key（无 Key 时基于洞察结果生成基础叙事）
 
@@ -1228,7 +964,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-### 7.10 右侧自动洞察面板
+### 6.10 右侧自动洞察面板
 
 每次成功上传数据后，右侧面板自动刷新，显示 5 类规则引擎洞察（**零 API 消耗**）：
 
@@ -1242,7 +978,7 @@ AI:   （生成并执行绘图代码，渲染 Plotly 交互图）
 
 ---
 
-## 8. API 接口参考
+## 7. API 接口参考
 
 所有接口均以 `/api` 为前缀，返回 JSON。
 
@@ -1520,7 +1256,7 @@ data: [DONE]\n\n
 
 ---
 
-## 9. 配置说明
+## 8. 配置说明
 
 编辑 `config.py` 修改以下参数：
 
@@ -1539,7 +1275,7 @@ data: [DONE]\n\n
 
 ---
 
-## 10. 测试说明
+## 9. 测试说明
 
 ### 运行测试
 
@@ -1595,7 +1331,7 @@ python -m pytest tests/ -q
 
 ---
 
-## 11. 版本历史
+## 10. 版本历史
 
 | 版本 | 日期 | 主要更新 |
 |------|------|---------|
@@ -1604,11 +1340,11 @@ python -m pytest tests/ -q
 | **v3.0** | 2026-05 末 | SSE 流式响应底座（问答+报告流式推送），NL2Vis 图表工作台（自然语言→Plotly 交互图表），数据质量评分卡（5 维度加权评分），智能分析计划生成器，数据叙事引擎，测试覆盖扩至 247 用例 |
 | **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 276 用例 |
 | **v3.2** | 2026-06-02 | **技能化问数架构**：新增 `skills/` 确定性技能层（6 个技能：stats/viz/trend/correlation/distribution/profile），每个技能 = `SKILL.md` + 独立 Python 脚本。`SkillRouter` 实现 LLM 双阶段调用：第 1 次选技能 + 生成 JSON 计划，第 2 次基于证据表流式中文解释。`/chat` 集成技能优先路由，无命中时降级到代码生成沙箱兜底。前端新增 SSE `route`/`evidence` 事件渲染（技能选择徽章 + 证据表）。测试扩至 338 用例 |
-| **v3.3** | 2026-06-08 | **生产部署就绪**：新增 Nginx 反向代理（静态缓存 + SSE 支持）、Dockerfile 优化（Gunicorn 2 worker + 分层构建 + 排除视频/测试）、视频懒加载（首屏减少 11.2 MB 流量）、`/api/health` 健康检查端点、生产依赖拆分（`requirements-prod.txt`）、生产模式 7 天静态缓存。README 新增「云服务器部署小白教程」章节 |
+| **v3.3** | 2026-06-08 | **生产部署就绪**：新增 Nginx 反向代理（静态缓存 + SSE 支持）、Dockerfile 优化（Gunicorn 2 worker + 分层构建 + 排除视频/测试）、视频懒加载（首屏减少 11.2 MB 流量）、`/api/health` 健康检查端点、生产依赖拆分（`requirements-prod.txt`）、生产模式 7 天静态缓存。|
 
 ---
 
-## 12. 常见问题
+## 11. 常见问题
 
 **Q1：上传 CSV 后中文显示乱码？**
 
@@ -1650,7 +1386,7 @@ python -m pytest tests/ -q
 
 **Q6：如何在生产环境部署？**
 
-详见 [第 6 节：云服务器部署（小白教程）](#6-云服务器部署小白教程)，包含从零开始的完整步骤：安装 Docker → 上传代码 → 配置环境变量 → 一键启动 → 配置域名和 HTTPS。
+详见 [第 5 节：快速启动](#5-快速启动)
 
 快速命令（已有 Docker 的服务器）：
 
@@ -1744,7 +1480,7 @@ Cmd+Shift+R     （macOS 强制刷新）
 
 ---
 
-## 13. 技术架构
+## 12. 技术架构
 
 ### 分层架构
 
@@ -1810,7 +1546,7 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-## 14. AI 使用声明摘要
+## 13. AI 使用声明摘要（详细请见AI使用声明报告.md）
 
 > 📄 完整报告见：[`AI使用声明报告.md`](AI使用声明报告.md)
 
@@ -1851,4 +1587,4 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-*DataMind v3.2 — 来源：学生 + AI*
+*DataMind v3.3 — 来源：学生 + AI*

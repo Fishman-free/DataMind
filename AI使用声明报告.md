@@ -291,7 +291,268 @@ git reset --hard HEAD~1
 
 **经验**：Skills 不是越多越好。过多的 Skills 反而会增加认知负担——每次任务都要判断"该用哪个 Skill"。关键是找到 5-6 个高频 Skills 形成肌肉记忆。
 
-### 2.8 动态工作流（Dynamic Workflow）
+### 2.8 实战经验：省 Token 与 Skills 深度应用
+
+> 本节记录在项目开发过程中积累的实战经验——如何在有限的 Token 预算内最大化产出，以及如何让 Skills 真正成为生产力工具而非负担。
+
+#### 2.8.1 Token 消耗的真相
+
+在项目开发过程中，我逐渐摸清了 Token 消耗的规律：
+
+| 操作 | Token 消耗（估算） | 优化策略 |
+|------|:------------------:|----------|
+| `Read` 一个 200 行文件 | ~800 tokens | 只读需要的部分，用 `offset` + `limit` |
+| `Grep` 搜索 | ~200 tokens | 优先用 Grep 定位，再 Read 相关行 |
+| `Edit` 局部修改 | ~400 tokens | 比 Write 节省 60%+ |
+| `Write` 整个文件 | ~1500 tokens | 仅用于创建新文件 |
+| AI 生成代码响应 | ~2000 tokens | 无法控制，但可以通过 prompt 优化 |
+| `/compact` 压缩 | 释放 ~30% 上下文 | 关键操作，每 15-20 轮调用一次 |
+
+**关键发现**：一个典型的开发会话（2 小时）会消耗约 50k-100k tokens。其中 **Read/Grep 操作占 40%**，AI 响应占 40%，Edit/Write 占 20%。
+
+#### 2.8.2 省 Token 的实战技巧
+
+**技巧 1：Grep 先行，Read 精准**
+
+```
+❌ 错误做法：Read 整个 500 行的 routes/api.py
+✅ 正确做法：
+   1. Grep "def chat" → 定位到第 657 行
+   2. Read(routes/api.py, offset=655, limit=50) → 只读相关函数
+```
+
+**节省效果**：从 ~2000 tokens 降到 ~400 tokens，节省 80%。
+
+**技巧 2：Edit 替代 Write**
+
+```
+❌ 错误做法：Read 整个文件 → 修改 → Write 整个文件
+✅ 正确做法：
+   1. Read 文件确认内容
+   2. Edit(file_path, old_string="...", new_string="...")
+```
+
+**节省效果**：Edit 只传输差异部分，Write 传输整个文件。对于 500 行文件，Edit 节省约 60% tokens。
+
+**技巧 3：并行 Grep 减少串行调用**
+
+```
+❌ 错误做法：
+   Grep("def analyze") → 等待结果
+   Grep("class Analyzer") → 等待结果
+   Grep("import pandas") → 等待结果
+
+✅ 正确做法：在一条消息中并行调用 3 个 Grep
+```
+
+**节省效果**：减少 2 次往返的上下文加载，节省约 1000 tokens。
+
+**技巧 4：Subagent 隔离大文件处理**
+
+```
+❌ 错误做法：在主会话中 Read 3 个 500 行文件（6000 tokens）
+✅ 正确做法：
+   Agent("读取并分析这 3 个文件的依赖关系")
+   → Subagent 内部读取，只返回结论（500 tokens）
+```
+
+**节省效果**：主会话节省 5500 tokens，代价是 Subagent 的独立上下文。
+
+**技巧 5：Skills 的 Token 成本**
+
+每次调用 Skill 工具会加载 SKILL.md 文件到上下文：
+
+| Skill | SKILL.md 大小 | Token 成本 |
+|-------|:------------:|:----------:|
+| `brainstorming` | ~2KB | ~800 tokens |
+| `test-driven-development` | ~3KB | ~1200 tokens |
+| `systematic-debugging` | ~2KB | ~800 tokens |
+| `verification-before-completion` | ~1.5KB | ~600 tokens |
+
+**经验**：不要"以防万一"调用 Skill。如果任务明确（"修复这个 typo"），直接做，不要走 TDD 流程。
+
+#### 2.8.3 Skills 的深度应用经验
+
+**Skill 1：brainstorming — 需求分析利器**
+
+**何时用**：收到模糊需求时（"加个导出功能"）
+
+**何时不用**：需求明确时（"把第 42 行的 `var` 改成 `let`"）
+
+**实际案例**：
+```
+用户："加一个数据叙事功能"
+
+→ 调用 brainstorming Skill
+→ AI 提问：目标用户是谁？叙事风格？输出格式？降级方案？
+→ 学生回答后，AI 生成需求文档
+→ 学生审查调整，得到明确的功能规格
+```
+
+**价值**：把模糊需求变成可执行的规格，避免"做完了才发现不是用户想要的"。
+
+**Skill 2：test-driven-development — 质量保障**
+
+**流程**：
+```
+1. 先写测试（定义预期行为）
+2. 运行测试（确认失败）
+3. 实现代码
+4. 运行测试（确认通过）
+5. 重构
+```
+
+**实际案例**：实现 `DataProfiler` 时
+```python
+# Step 1: 先写测试
+def test_retail_profile(retail_df):
+    profiler = DataProfiler(retail_df)
+    result = profiler.detect()
+    assert result["mode"] == "retail"
+    assert "InvoiceDate" in result["date_col"]
+
+# Step 2: 运行测试 → 失败（DataProfiler 还不存在）
+
+# Step 3: 实现 DataProfiler
+
+# Step 4: 运行测试 → 通过
+```
+
+**价值**：测试先行迫使你在写代码前想清楚接口设计，而不是写完再补测试。
+
+**Skill 3：systematic-debugging — Bug 排查框架**
+
+**流程**：
+```
+1. 收集症状（错误信息、复现步骤）
+2. 形成假设（可能的原因列表）
+3. 设计实验（最小化复现用例）
+4. 验证假设（逐一排除）
+5. 修复并验证
+```
+
+**实际案例**：散点图空白问题
+```
+症状：散点图只显示坐标轴，无数据点
+假设 1：Plotly 配置错误 → 检查 layout，排除
+假设 2：数据为空 → 打印 data，发现是 Base64 编码
+假设 3：版本不兼容 → 确认 Plotly 5.x 新特性
+修复：实现 _decode_plotly_bdata() 递归解码器
+```
+
+**价值**：避免"猜测式调试"（改一行试试，不行再改），用系统化方法定位根因。
+
+**Skill 4：verification-before-completion — 完成前验证**
+
+**何时用**：声称"这个功能做完了"之前
+
+**检查清单**：
+```
+□ 运行全量测试（python -m pytest tests/ -x）
+□ 检查是否有遗留的 print/debug 语句
+□ 检查是否有硬编码的测试数据
+□ 检查边界条件（空输入、大数据集、无网络）
+□ 检查错误处理（API 失败、文件不存在）
+```
+
+**实际案例**：实现 NL2Vis 图表工作台后
+```
+声称完成前运行 verification-before-completion：
+1. 测试通过 ✅
+2. 发现遗留的 print("DEBUG: chart data") ❌ → 删除
+3. 发现大数据集（10 万行）时图表渲染卡顿 ❌ → 添加采样
+4. 发现 API Key 为空时无提示 ❌ → 添加错误处理
+```
+
+**价值**：避免"开发时觉得做完了，用户使用时发现一堆问题"。
+
+#### 2.8.4 Harness 工程的深度实践
+
+**实践 1：CLAUDE.md 的分层设计**
+
+我将 CLAUDE.md 设计为三层结构：
+
+```markdown
+# 第一层：全局规则（所有项目通用）
+- 编码规范、测试策略、Git 提交规范
+
+# 第二层：项目规则（DataMind 特有）
+- 技术栈、目录结构、核心架构
+
+# 第三层：模块规则（特定模块的约束）
+- 沙箱安全规则、SSE 流式规则、Plotly 兼容性规则
+```
+
+**效果**：AI 在处理不同模块时会自动加载对应的规则上下文，生成的代码更符合项目要求。
+
+**实践 2：Hooks 的组合使用**
+
+我配置了 3 个 Hooks 形成自动化验证链：
+
+```json
+{
+  "hooks": [
+    {
+      "type": "command",
+      "command": "python -m pytest tests/ -x --tb=short -q 2>&1 | tail -8"
+    },
+    {
+      "type": "command", 
+      "command": "python -m py_compile routes/api.py 2>&1 || echo 'Syntax error'"
+    }
+  ]
+}
+```
+
+**效果**：
+- 第一个 Hook：运行测试，发现逻辑错误
+- 第二个 Hook：语法检查，发现拼写错误
+
+**实践 3：Git checkpoint 策略**
+
+我形成了固定的 Git 工作流：
+
+```
+1. 开始新功能前：git add -A && git commit -m "checkpoint: before <功能名>"
+2. 实现过程中：每完成一个子任务 commit 一次
+3. 发现问题时：git reset --hard HEAD~1 回滚到上一个 checkpoint
+4. 功能完成时：git add -A && git commit -m "feat: <功能描述>"
+```
+
+**实际案例**：实现技能路由时
+```
+checkpoint: before skill router      ← 安全点
+feat: add SkillResult contract       ← 子任务 1
+feat: add stats-skill                ← 子任务 2
+feat: add trend-skill                ← 子任务 3
+fix: safe_col fallback logic         ← Bug 修复
+feat: integrate skill router to chat ← 集成
+```
+
+**价值**：出问题时可以精确回滚到任意子任务，而不是从头开始。
+
+**实践 4：模型切换的时机判断**
+
+在项目中，我形成了清晰的模型切换策略：
+
+| 阶段 | 模型 | 原因 |
+|------|------|------|
+| 需求讨论 | Opus | 需要最高智能理解模糊需求 |
+| 架构设计 | Opus | 需要全局视角和判断力 |
+| 代码骨架 | DeepSeek | 明确的任务，便宜高效 |
+| 细节实现 | DeepSeek | 重复性编码，不需要顶级智能 |
+| Bug 修复 | Sonnet | 需要一定判断力，但不需要 Opus |
+| 代码重构 | Sonnet | 需要理解代码意图，DeepSeek 容易出错 |
+| 安全审计 | Opus | 需要最高智能发现潜在漏洞 |
+
+**成本数据**：
+- 整个项目约消耗 500k tokens
+- 其中 Opus 约 50k（10%），Sonnet 约 150k（30%），DeepSeek 约 300k（60%）
+- 总成本约 $15（Opus $8 + Sonnet $4 + DeepSeek $3）
+
+**关键认知**：用 DeepSeek 写代码、用 Sonnet 改代码、用 Opus 想方案——这是成本和质量的最优平衡点。
+
+### 2.9 动态工作流（Dynamic Workflow）
 
 对于大规模任务（如全量测试回归、多模块重构），我使用 Claude Code 的动态工作流功能：
 
@@ -308,7 +569,7 @@ phases:
 
 **价值**：将复杂的多步骤操作封装为可重复执行的工作流，减少人工操作错误。
 
-### 2.9 方法论总结
+### 2.10 方法论总结
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
