@@ -1329,6 +1329,26 @@ python -m pytest tests/ -q
 
 > 所有测试均使用 `unittest.mock.MagicMock` 模拟 OpenAI API，无需真实 Key，CI 环境可直接运行。SSE 响应测试验证流式格式和事件类型完整性。
 
+### 测试数据集
+
+**数据来源：** [Online Retail 数据集](https://archive.ics.uci.edu/dataset/352/online%2Bretail)（UCI Machine Learning Repository，原始来源 Kaggle）
+
+该数据集包含英国一家在线零售商在 2010-2011 年间的交易记录，涵盖 8 个字段：InvoiceNo、StockCode、Description、Quantity、InvoiceDate、UnitPrice、CustomerID、Country。
+
+**子集划分：** 已将原始数据划分为 5 个子集（子集间可部分重叠），用于不同测试场景：
+
+| 子集文件 | 说明 | 大小 |
+|----------|------|------|
+| `subset_uk.csv` | 英国客户交易数据 | 46 KB |
+| `subset_highvalue.csv` | 高价值订单数据 | 18 KB |
+| `subset_international.csv` | 国际客户交易数据 | 17 KB |
+| `subset_missing.csv` | 包含缺失值的数据 | 17 KB |
+| `subset_returns.csv` | 退货订单数据 | 8.7 KB |
+
+**子集位置：** `tests/data/` 目录
+
+**通用性保障：** DataMind 通过 `DataProfiler` 数据画像系统（`data/profiler.py`）实现全数据集普适性，自动检测 6 种数据画像（retail/temporal/numeric/categorical/geographic/mixed），无需针对特定数据集硬编码即可适配各类结构化数据。
+
 ---
 
 ## 10. 版本历史
@@ -1546,9 +1566,9 @@ shutil, pathlib, socket, __builtins__, globals, locals
 
 ---
 
-## 13. AI 使用声明摘要（详细请见AI使用声明报告.md）
+## 13. AI 使用声明摘要
 
-> 📄 完整报告见：[`AI使用声明报告.md`](AI使用声明报告.md)
+> 📄 **完整报告**：[`AI使用声明报告.md`](AI使用声明报告.md)（66KB，含 5 个详细案例与反思总结）
 
 ### 工具与使用概况
 
