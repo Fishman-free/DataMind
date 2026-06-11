@@ -603,10 +603,19 @@ ollama serve
 
 ## 5. 快速启动
 
+### 0. 获取代码
+
+```bash
+# 克隆 GitHub 仓库到本地
+git clone https://github.com/Fishman-free/DataMind.git
+cd DataMind
+```
+
+> **没有 Git？** 也可以直接访问 [GitHub 仓库页面](https://github.com/Fishman-free/DataMind)，点击绿色「Code」按钮 →「Download ZIP」下载压缩包解压后使用。
+
 ### 方式一：本地 Python 运行（开发/演示）
 
 ```bash
-cd DataMind
 pip install -r requirements.txt
 python app.py
 ```
