@@ -1369,7 +1369,7 @@ python -m pytest tests/ -q
 | **v3.0** | 2026-05 末 | SSE 流式响应底座（问答+报告流式推送），NL2Vis 图表工作台（自然语言→Plotly 交互图表），数据质量评分卡（5 维度加权评分），智能分析计划生成器，数据叙事引擎，测试覆盖扩至 247 用例 |
 | **v3.1** | 2026-05-26 | **Bug 修复批次**：时效性进度条颜色修复（`--yellow`→`--amber`）、仪表盘图表尺寸错误修复（flex 样式重置 + 双重 resize）、散点图同步后不可见修复（剥离 plotly_dark 模板 + marker 可见性保障）、时效性未来日期负数文案修复。**通用性增强**：6 种画像专属建议问题、宽数据集（>25 列）系统提示词截断、纯分类数据自适应图表、DataProfiler 全模式覆盖。测试扩至 276 用例 |
 | **v3.2** | 2026-06-02 | **技能化问数架构**：新增 `skills/` 确定性技能层（6 个技能：stats/viz/trend/correlation/distribution/profile），每个技能 = `SKILL.md` + 独立 Python 脚本。`SkillRouter` 实现 LLM 双阶段调用：第 1 次选技能 + 生成 JSON 计划，第 2 次基于证据表流式中文解释。`/chat` 集成技能优先路由，无命中时降级到代码生成沙箱兜底。前端新增 SSE `route`/`evidence` 事件渲染（技能选择徽章 + 证据表）。测试扩至 338 用例 |
-| **v3.3** | 2026-06-08 | **生产部署就绪**：新增 Nginx 反向代理（静态缓存 + SSE 支持）、Dockerfile 优化（Gunicorn 2 worker + 分层构建 + 排除视频/测试）、视频懒加载（首屏减少 11.2 MB 流量）、`/api/health` 健康检查端点、生产依赖拆分（`requirements-prod.txt`）、生产模式 7 天静态缓存。|
+| **v3.3** | 2026-06-08 | **生产部署就绪**：新增 Nginx 反向代理（静态缓存 + SSE 支持）、Dockerfile 优化（Gunicorn 2 worker + 分层构建 + 排除视频/测试）、视频懒加载（首屏减少 11.2 MB 流量）、`/api/health` 健康检查端点、生产依赖拆分（`requirements-prod.txt`）、生产模式 7 天静态缓存、优化网页启动速度。|
 
 ---
 
