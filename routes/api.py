@@ -36,7 +36,6 @@ from flask import Blueprint, Response, current_app, jsonify, request, stream_wit
 import config
 from data.loader import UnsupportedFormatError, load_file
 from data.preprocessor import Preprocessor
-from data.preprocess_visualizer import PreprocessVisualizer
 from data.analyzer import Analyzer
 from data.detector import Detector
 from ai.chat import ChatSession
@@ -150,6 +149,7 @@ def _rebuild_state_from_file(save_path: str) -> dict:
     state = _state()
     state["df_raw"]            = df_raw
     state["df_clean"]          = df_clean
+    state["filename"]          = Path(save_path).name
     state["preprocess_report"] = prep_report
     state["analyzer"]          = analyzer
     state["detector"]          = detector
@@ -323,6 +323,38 @@ def data_quality():
         )
         state["quality_score"] = qs
     return jsonify(qs)
+
+
+@api_bp.route("/data/status")
+def dataset_status():
+    """
+    轻量级数据集状态检查端点。
+
+    返回数据集是否已加载，以及基本信息。
+    用于前端跨页面导航时快速恢复数据集状态显示，
+    比 /api/data/summary 更轻量（不做任何计算）。
+
+    Returns:
+        {
+            "loaded": true/false,
+            "filename": "sales.csv",
+            "row_count": 1234,
+            "column_count": 10
+        }
+    """
+    err = _require_data()
+    if err is not None:
+        return jsonify({"loaded": False, "filename": None, "row_count": 0, "column_count": 0})
+
+    state = _state()
+    df = state["df_clean"]
+    filename = state.get("filename", "数据集")
+    return jsonify({
+        "loaded": True,
+        "filename": filename,
+        "row_count": len(df),
+        "column_count": len(df.columns),
+    })
 
 
 # ── 洞察接口 ──────────────────────────────────────────────────
@@ -564,6 +596,7 @@ def preprocess_charts_api():
     pp_report = state.get("preprocess_report", {})
     if df_raw is None:
         df_raw = df_clean
+    from data.preprocess_visualizer import PreprocessVisualizer
     viz = PreprocessVisualizer(df_raw, df_clean, pp_report)
     return jsonify(viz.generate_all())
 
@@ -693,7 +726,10 @@ def chat():
         return jsonify(result)
 
     # SSE 流路径：技能优先路由 → 确定性执行 + LLM 解释，未命中则代码生成兜底
-    router = SkillRouter(cg.client, config.AI_MODEL)
+    router = state.get("skill_router")
+    if router is None:
+        router = SkillRouter(cg.client, config.AI_MODEL)
+        state["skill_router"] = router
     skill_context = {
         "profile": state.get("profile"),
         "quality_score": state.get("quality_score"),
@@ -871,6 +907,7 @@ def _apply_ai_config(api_key: str, base_url: str, model: str) -> None:
     client = _init_ai_client(api_key, base_url, model)
     state["openai_client"]    = client
     state["code_generator"]   = CodeGenerator(client)
+    state["skill_router"]     = None  # invalidate cache, rebuild with new client on next request
     state["report_generator"] = ReportGenerator(client)
     # 持久化 AI 配置，供服务重启后自动恢复
     _save_ai_config(api_key, base_url, model)

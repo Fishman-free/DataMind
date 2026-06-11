@@ -50,9 +50,9 @@
   --tr-slow: 0.40s cubic-bezier(.4,0,.2,1);
 
   /* Fonts */
-  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
-  --font-body:    'Barlow', 'Noto Sans SC', 'PingFang SC', system-ui, sans-serif;
-  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --font-display: Georgia, 'Times New Roman', 'Microsoft YaHei', serif;
+  --font-body:    'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, -apple-system, sans-serif;
+  --font-mono:    'Cascadia Code', 'Fira Code', 'Consolas', 'Menlo', monospace;
 
   /* Holographic cube */
   --cube-s: 165px;
@@ -1899,7 +1899,7 @@ main.flex-grow-1 > * {
 .hero-desc {
   margin-top: 28px;
   color: rgba(255, 255, 255, 0.52);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: var(--font-mono);
   font-size: 0.875rem;
   line-height: 1.75;
   letter-spacing: 0.015em;

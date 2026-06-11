@@ -120,6 +120,7 @@ document.getElementById('prepPanel').addEventListener('show.bs.collapse', functi
     if (!_prepLoaded) { _prepLoaded = true; loadPrepCharts(); }
 });
 
+if (typeof restoreDatasetStatus === 'function') restoreDatasetStatus();
 window.initVisualizationPage();
 </script>
 {% endblock %}

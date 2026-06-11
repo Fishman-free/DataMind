@@ -132,6 +132,7 @@ function quickAsk(q) {
 (async function () {
     const res = await fetch("/api/data/summary");
     if (res.ok) {
+        if (typeof restoreDatasetStatus === 'function') restoreDatasetStatus();
         document.getElementById("no-data-alert").style.display  = "none";
         document.getElementById("chat-section").style.display   = "block";
         window.initAnalysisPage();

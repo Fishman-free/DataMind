@@ -470,6 +470,7 @@
 <script>
 window.initOverviewPage = async function () {
     try {
+        if (typeof restoreDatasetStatus === 'function') restoreDatasetStatus();
         const [sRes, pRes, prepRes] = await Promise.all([
             fetch("/api/data/summary"),
             fetch("/api/data/preview?n=50"),
@@ -822,6 +823,8 @@ function downloadCleanData() {
     window.location.href = '/api/data/download-clean';
 }
 
+// 立即恢复数据集状态
+if (typeof restoreDatasetStatus === 'function') restoreDatasetStatus();
 window.initOverviewPage();
 </script>
 {% endblock %}

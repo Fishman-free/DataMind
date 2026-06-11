@@ -4,16 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DataMind — 智能问数平台</title>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon-32.png') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon-32.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Barlow:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
     <!-- Highlight.js -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
     <!-- Custom styles -->
@@ -179,7 +176,13 @@
         DataMind
     </a>
 
-    <span id="dataset-status">未上传数据</span>
+    <span id="dataset-status" class="{% if dataset_loaded %}loaded{% endif %}">
+        {% if dataset_loaded %}
+            已加载: {{ dataset_filename }}
+        {% else %}
+            未上传数据
+        {% endif %}
+    </span>
 
     <div class="ms-auto d-flex align-items-center gap-2">
         <label class="btn-upload" for="file-upload">
@@ -321,8 +324,8 @@
 
 <!-- 状态栏 -->
 <footer class="statusbar">
-    <span id="status-rows"><i class="bi bi-table me-1"></i>-</span>
-    <span id="status-cols"><i class="bi bi-layout-three-columns me-1"></i>-</span>
+    <span id="status-rows"><i class="bi bi-table me-1"></i>{% if dataset_loaded %}{{ "{:,}".format(dataset_row_count) }} 条记录{% else %}-{% endif %}</span>
+    <span id="status-cols"><i class="bi bi-layout-three-columns me-1"></i>{% if dataset_loaded %}{{ dataset_column_count }} 个字段{% else %}-{% endif %}</span>
     <span id="status-ai"><i class="bi bi-robot me-1"></i>AI 就绪</span>
 </footer>
 
@@ -332,6 +335,16 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<!-- 页面切换时立即恢复数据集状态，不等 DOMContentLoaded -->
+<script>
+    console.log('[DataMind] base.html 内联脚本执行, typeof restoreDatasetStatus=' + typeof restoreDatasetStatus);
+    if (typeof restoreDatasetStatus === 'function') {
+        console.log('[DataMind] base.html 内联脚本调用 restoreDatasetStatus');
+        restoreDatasetStatus();
+    } else {
+        console.warn('[DataMind] base.html 内联脚本: restoreDatasetStatus 未定义！');
+    }
+</script>
 <script src="{{ url_for('static', filename='js/bg-effects.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fireworks.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sse-handler.js') }}"></script>

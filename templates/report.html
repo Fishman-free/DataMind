@@ -530,6 +530,7 @@ if (document.readyState === 'loading') {
 (async function () {
     const res = await fetch("/api/data/summary");
     if (res.ok) {
+        if (typeof restoreDatasetStatus === 'function') restoreDatasetStatus();
         document.getElementById("no-data-alert").style.display  = "none";
         document.getElementById("report-section").style.display = "block";
     }

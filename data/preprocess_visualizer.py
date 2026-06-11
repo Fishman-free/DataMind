@@ -7,7 +7,7 @@
 来源：学生+AI
 """
 from __future__ import annotations
-import base64, io, json, os, time
+import base64, io, json, os, threading, time
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -106,7 +106,16 @@ def _build_cn_font() -> fm.FontProperties:
     return fm.FontProperties(family=cn_name)
 
 
-_CN_FONT = _build_cn_font()
+_CN_FONT = None
+_CN_FONT_LOCK = threading.Lock()
+
+def _get_cn_font():
+    global _CN_FONT
+    if _CN_FONT is None:
+        with _CN_FONT_LOCK:
+            if _CN_FONT is None:
+                _CN_FONT = _build_cn_font()
+    return _CN_FONT
 
 # ── 赛博朋克配色常量 ──────────────────────────────────────────
 
@@ -152,18 +161,18 @@ class PreprocessVisualizer:
         cmap = ['#1e3a5f', _W] if mm.values.any() else [_OK, _OK]
         data = mm if mm.values.any() else pd.DataFrame(False, index=df.index, columns=df.columns)
         sns.heatmap(data, ax=ax, cbar=False, cmap=cmap, xticklabels=True, yticklabels=False)
-        ax.set_title('原始数据缺失值分布热力图', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
-        ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
-        ax.set_ylabel('样本行（采样）', color=_TXT, fontproperties=_CN_FONT)
+        ax.set_title('原始数据缺失值分布热力图', color=_TXT, fontsize=13, pad=10, fontproperties=_get_cn_font())
+        ax.set_xlabel('列名', color=_TXT, fontproperties=_get_cn_font())
+        ax.set_ylabel('样本行（采样）', color=_TXT, fontproperties=_get_cn_font())
         ax.tick_params(colors=_TXT, labelsize=8)
         plt.xticks(rotation=30, ha='right')
         # 为 seaborn heatmap 的 xticklabels 显式设置字体
         for label in ax.get_xticklabels():
-            label.set_fontproperties(_CN_FONT)
+            label.set_fontproperties(_get_cn_font())
         ax.legend(handles=[mpatches.Patch(color='#1e3a5f', label='有值'),
                             mpatches.Patch(color=_W, label='缺失')],
                   loc='upper right', facecolor=_BG, labelcolor=_TXT,
-                  prop=_CN_FONT, fontsize=8)
+                  prop=_get_cn_font(), fontsize=8)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -187,14 +196,14 @@ class PreprocessVisualizer:
         for bar, val in zip(bars, rows):
             ax.text(bar.get_width() + max(rows)*0.01, bar.get_y()+bar.get_height()/2,
                     str(val) + ' 行', va='center', ha='left', color=_TXT, fontsize=10,
-                    fontproperties=_CN_FONT)
-        ax.set_title('预处理流水线行数变化', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
-        ax.set_xlabel('行数', color=_TXT, fontproperties=_CN_FONT)
-        ax.set_ylabel('处理阶段', color=_TXT, fontproperties=_CN_FONT)
+                    fontproperties=_get_cn_font())
+        ax.set_title('预处理流水线行数变化', color=_TXT, fontsize=13, pad=10, fontproperties=_get_cn_font())
+        ax.set_xlabel('行数', color=_TXT, fontproperties=_get_cn_font())
+        ax.set_ylabel('处理阶段', color=_TXT, fontproperties=_get_cn_font())
         ax.tick_params(colors=_TXT)
         # 为 Y 轴刻度标签显式设置中文字体
         for label in ax.get_yticklabels():
-            label.set_fontproperties(_CN_FONT)
+            label.set_fontproperties(_get_cn_font())
         ax.spines[:].set_color(_GRID)
         ax.set_xlim(0, max(rows)*1.18)
         ax.xaxis.grid(True, color=_GRID, linewidth=0.5)
@@ -216,9 +225,9 @@ class PreprocessVisualizer:
             sns.boxplot(data=self._clean[nc], ax=ax, palette=[_A]*len(nc),
                         flierprops={'marker': 'o', 'markerfacecolor': _W, 'markersize': 4, 'alpha': 0.6},
                         width=0.5)
-            ax.set_title('数值列异常值箱线图（IQR x1.5）', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
-            ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
-            ax.set_ylabel('数值', color=_TXT, fontproperties=_CN_FONT)
+            ax.set_title('数值列异常值箱线图（IQR x1.5）', color=_TXT, fontsize=13, pad=10, fontproperties=_get_cn_font())
+            ax.set_xlabel('列名', color=_TXT, fontproperties=_get_cn_font())
+            ax.set_ylabel('数值', color=_TXT, fontproperties=_get_cn_font())
             ax.tick_params(colors=_TXT, labelsize=9)
             ax.spines[:].set_color(_GRID)
             ax.yaxis.grid(True, color=_GRID, linewidth=0.5)
@@ -226,11 +235,11 @@ class PreprocessVisualizer:
             plt.xticks(rotation=20, ha='right')
             # 为 X 轴刻度标签显式设置中文字体
             for label in ax.get_xticklabels():
-                label.set_fontproperties(_CN_FONT)
+                label.set_fontproperties(_get_cn_font())
         else:
             ax.text(0.5, 0.5, '无数值列', transform=ax.transAxes,
-                    ha='center', va='center', color=_TXT, fontproperties=_CN_FONT)
-            ax.set_title('数值列异常值箱线图', color=_TXT, fontsize=13, fontproperties=_CN_FONT)
+                    ha='center', va='center', color=_TXT, fontproperties=_get_cn_font())
+            ax.set_title('数值列异常值箱线图', color=_TXT, fontsize=13, fontproperties=_get_cn_font())
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -265,8 +274,8 @@ class PreprocessVisualizer:
             a.set_fontweight('bold')
         ax.legend(wedges, [l + '（' + str(s) + ' 列）' for l, s in zip(lb, sz)],
                   loc='lower center', bbox_to_anchor=(0.5, -0.15), ncol=2,
-                  facecolor=_BG, labelcolor=_TXT, prop=_CN_FONT, fontsize=9)
-        ax.set_title('列数据类型分布', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
+                  facecolor=_BG, labelcolor=_TXT, prop=_get_cn_font(), fontsize=9)
+        ax.set_title('列数据类型分布', color=_TXT, fontsize=13, pad=10, fontproperties=_get_cn_font())
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)
@@ -283,8 +292,8 @@ class PreprocessVisualizer:
         ax.set_facecolor(_BG)
         if not mi:
             ax.text(0.5, 0.5, '无缺失值需填充', transform=ax.transAxes,
-                    ha='center', va='center', color=_OK, fontsize=14, fontproperties=_CN_FONT)
-            ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, fontproperties=_CN_FONT)
+                    ha='center', va='center', color=_OK, fontsize=14, fontproperties=_get_cn_font())
+            ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, fontproperties=_get_cn_font())
             ax.axis('off')
             plt.tight_layout()
             img = self._b64(fig)
@@ -292,25 +301,40 @@ class PreprocessVisualizer:
             return {'title': '缺失值填充前后对比', 'img': img, 'desc': '数据集无缺失值，无需填充'}
         cols = list(mi.keys())
         before = [int(v) for v in mi.values()]
+        # 从清洗后数据获取实际缺失值数量（填充后应为 0）
+        after = [int(self._clean[col].isnull().sum()) if col in self._clean.columns else 0 for col in cols]
         x = np.arange(len(cols))
         w = 0.35
         b1 = ax.bar(x - w/2, before, w, label='填充前', color=_W, alpha=0.85)
-        ax.bar(x + w/2, [0]*len(cols), w, label='填充后', color=_OK, alpha=0.85)
+        b2 = ax.bar(x + w/2, after, w, label='填充后', color=_OK, alpha=0.85)
+        # 为填充前柱子添加数值标签
         for bar in b1:
             h = bar.get_height()
             if h > 0:
                 ax.text(bar.get_x()+bar.get_width()/2, h+max(before)*0.02, str(int(h)),
-                        ha='center', va='bottom', color=_TXT, fontsize=9, fontproperties=_CN_FONT)
-        ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, pad=10, fontproperties=_CN_FONT)
-        ax.set_xlabel('列名', color=_TXT, fontproperties=_CN_FONT)
-        ax.set_ylabel('缺失单元格数', color=_TXT, fontproperties=_CN_FONT)
+                        ha='center', va='bottom', color=_TXT, fontsize=9, fontproperties=_get_cn_font())
+        # 为填充后柱子添加数值标签（包括 0，防止因高度为 0 不可见）
+        for bar in b2:
+            h = bar.get_height()
+            y_offset = max(before)*0.02 if h > 0 else max(max(before)*0.06, 0.5)
+            ax.text(bar.get_x()+bar.get_width()/2, y_offset, str(int(h)),
+                    ha='center', va='bottom', color=_OK, fontsize=9, fontproperties=_get_cn_font())
+        ax.set_title('缺失值填充前后对比', color=_TXT, fontsize=13, pad=10, fontproperties=_get_cn_font())
+        ax.set_xlabel('列名', color=_TXT, fontproperties=_get_cn_font())
+        ax.set_ylabel('缺失单元格数', color=_TXT, fontproperties=_get_cn_font())
         ax.set_xticks(x)
-        ax.set_xticklabels(cols, rotation=20, ha='right', color=_TXT, fontsize=9, fontproperties=_CN_FONT)
+        ax.set_xticklabels(cols, rotation=20, ha='right', color=_TXT, fontsize=9)
+        # 显式为每个 X 轴刻度标签设置中文字体
+        for label in ax.get_xticklabels():
+            label.set_fontproperties(_get_cn_font())
         ax.tick_params(colors=_TXT)
         ax.spines[:].set_color(_GRID)
         ax.yaxis.grid(True, color=_GRID, linewidth=0.5)
         ax.set_axisbelow(True)
-        ax.legend(facecolor=_BG, labelcolor=_TXT, prop=_CN_FONT, fontsize=9)
+        # 确保 y 轴有足够空间显示标签
+        y_max = max(before) * 1.18 if before else 10
+        ax.set_ylim(0, y_max)
+        ax.legend(facecolor=_BG, labelcolor=_TXT, prop=_get_cn_font(), fontsize=9)
         plt.tight_layout()
         img = self._b64(fig)
         plt.close(fig)

@@ -47,6 +47,13 @@ def create_app() -> Flask:
 
 if __name__ == "__main__":
     application = create_app()
+    if config.DEBUG:
+        print("=" * 60)
+        print("WARNING: DEBUG mode enabled (development mode)")
+        print("  - Hot reload active, auto-restart on code change")
+        print("  - For production, set FLASK_DEBUG=false environment variable")
+        print("  - Docker deployment auto-sets this, no manual action needed")
+        print("=" * 60)
     application.run(
         host=config.HOST,
         port=config.PORT,

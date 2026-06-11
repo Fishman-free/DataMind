@@ -3,6 +3,46 @@
  * 来源：学生+AI
  */
 
+// ── 服务端渲染状态 → localStorage 同步 ────────────────────
+/**
+ * 如果服务端模板已经渲染了"已加载: xxx"（带 loaded class），
+ * 将服务端数据同步到 localStorage，确保后续页面切换时也能恢复。
+ */
+(function syncServerRenderedStatus() {
+    var statusEl = document.getElementById("dataset-status");
+    if (!statusEl || !statusEl.classList.contains("loaded")) return;
+
+    // 服务端已渲染加载状态，提取 filename 并同步到 localStorage
+    var filename = statusEl.textContent.replace(/^已加载:\s*/, "").trim();
+    if (!filename || filename === "未上传数据") return;
+
+    // 尝试从已有的 localStorage 读取数据（可能更完整）
+    if (localStorage.getItem("dataset_status")) return; // 已有，无需同步
+
+    // 从服务端渲染的状态栏提取行列数
+    var rowEl = document.getElementById("status-rows");
+    var colEl = document.getElementById("status-cols");
+    var rowCount = 0, colCount = 0;
+    if (rowEl) {
+        var match = rowEl.textContent.match(/([\d,]+)/);
+        if (match) rowCount = parseInt(match[1].replace(/,/g, ""), 10);
+    }
+    if (colEl) {
+        var match = colEl.textContent.match(/(\d+)/);
+        if (match) colCount = parseInt(match[1], 10);
+    }
+
+    console.log("[DataMind] 从服务端同步状态到 localStorage:", filename, rowCount, colCount);
+    try {
+        localStorage.setItem("dataset_status", JSON.stringify({
+            filename: filename,
+            rowCount: rowCount,
+            colCount: colCount,
+            timestamp: Date.now()
+        }));
+    } catch (e) { /* 静默降级 */ }
+})();
+
 // ── 初始化入口 ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
     // 传统 input[type=file] 点击上传
@@ -21,6 +61,100 @@ document.addEventListener("DOMContentLoaded", () => {
     // AI 服务配置 Modal
     setupAISettings();
 });
+// ── 统一更新数据集状态 UI ─────────────────────────────────
+/**
+ * 更新导航栏数据集名称 + 底部状态栏行列数。
+ * 所有更新逻辑收敛在此函数中，确保 UI 一致性，别处也可调用。
+ * @param {string} filename - 数据集文件名
+ * @param {number} rowCount - 数据行数
+ * @param {number} colCount - 字段列数
+ */
+function updateDatasetStatusUI(filename, rowCount, colCount) {
+    console.log('[DataMind] updateDatasetStatusUI 被调用:', filename, rowCount, colCount);
+    var statusEl = document.getElementById("dataset-status");
+    if (statusEl) {
+        statusEl.textContent = "已加载: " + filename;
+        statusEl.classList.add("loaded");
+        console.log('[DataMind] dataset-status 已更新为:', statusEl.textContent);
+    } else {
+        console.warn('[DataMind] dataset-status 元素未找到！');
+    }
+
+    // 状态栏更新失败不应阻断调用方逻辑
+    try {
+        updateStatusBar(rowCount, colCount);
+    } catch (e) {
+        console.warn('[DataMind] updateStatusBar 失败:', e.message);
+    }
+
+    // 持久化到 localStorage，跨页面导航即时恢复
+    try {
+        localStorage.setItem("dataset_status", JSON.stringify({
+            filename: filename,
+            rowCount: rowCount,
+            colCount: colCount,
+            timestamp: Date.now()
+        }));
+        console.log('[DataMind] localStorage 已更新');
+    } catch (e) {
+        console.warn('[DataMind] localStorage 写入失败:', e.message);
+    }
+}
+
+// ── 数据集状态恢复（跨页面导航 / 浏览器重启后保留）──────
+async function restoreDatasetStatus() {
+    console.log('[DataMind] restoreDatasetStatus 开始执行, readyState=' + document.readyState);
+    var statusEl = document.getElementById("dataset-status");
+    if (!statusEl) {
+        console.warn('[DataMind] restoreDatasetStatus: dataset-status 元素未找到，放弃');
+        return;
+    }
+
+    // 防御：如果已经标记为 loaded，不再重复恢复
+    if (statusEl.classList.contains("loaded")) {
+        console.log('[DataMind] restoreDatasetStatus: 已有 loaded class，跳过');
+        return;
+    }
+
+    // Step 1: 优先从 localStorage 恢复（跨 session 持久化）
+    var saved = localStorage.getItem("dataset_status");
+    console.log('[DataMind] localStorage dataset_status:', saved ? '有数据(' + saved.length + '字节)' : '无数据');
+    if (saved) {
+        try {
+            var info = JSON.parse(saved);
+            console.log('[DataMind] localStorage 解析成功:', info.filename, info.rowCount, info.colCount);
+            updateDatasetStatusUI(info.filename, info.rowCount, info.colCount);
+            return;
+        } catch (e) {
+            console.warn('[DataMind] localStorage JSON 解析失败:', e.message);
+            // 解析失败，清除损坏的 localStorage 键，走后端兜底
+            try {
+                localStorage.removeItem("dataset_status");
+            } catch (removeErr) {
+                // localStorage 可能不可用（隐私模式/配额满），静默降级
+            }
+        }
+    }
+
+    // Step 2: 后端兜底检查（覆盖服务重启后 auto-reload 场景）
+    console.log('[DataMind] restoreDatasetStatus: localStorage 无数据，尝试后端 API...');
+    try {
+        var res = await fetch("/api/data/status");
+        console.log('[DataMind] /api/data/status 响应:', res.status, res.ok);
+        if (res.ok) {
+            var data = await res.json();
+            console.log('[DataMind] /api/data/status 数据:', JSON.stringify(data));
+            if (data.loaded && data.row_count > 0) {
+                var filename = data.filename || "数据集";
+                updateDatasetStatusUI(filename, data.row_count, data.column_count);
+            } else {
+                console.log('[DataMind] /api/data/status: loaded=false 或 row_count=0');
+            }
+        }
+    } catch (e) {
+        console.warn('[DataMind] 后端 API 不可达:', e.message);
+    }
+}
 
 // ── 核心上传函数（file input 与拖拽共用） ──────────────────
 async function uploadFile(file) {
@@ -45,9 +179,8 @@ async function uploadFile(file) {
         const data = await res.json();
 
         if (res.ok) {
-            statusEl.textContent = `已加载: ${file.name}`;
-            statusEl.classList.add("loaded");
-            updateStatusBar(data.row_count, data.column_count || 0);
+            updateDatasetStatusUI(file.name, data.row_count, data.column_count || 0);
+
             loadInsights();
             fetchQualityScore();
             if (window.initOverviewPage) window.initOverviewPage();
@@ -479,3 +612,27 @@ function renderQualityScore(data) {
         }).join('');
     }
 }
+
+// ── 脚本加载时立即恢复数据集状态 ─────────────────────────
+// 不等 DOMContentLoaded，作为第一道防线，确保导航栏在页面切换时不会短暂显示"未上传数据"
+console.log('[DataMind] app.js 加载完毕, readyState=' + document.readyState);
+if (document.readyState !== 'loading') {
+    console.log('[DataMind] DOM 已就绪，立即调用 restoreDatasetStatus');
+    restoreDatasetStatus();
+} else {
+    console.log('[DataMind] DOM 仍在加载，监听 DOMContentLoaded');
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('[DataMind] DOMContentLoaded 触发，调用 restoreDatasetStatus');
+        restoreDatasetStatus();
+    });
+}
+
+// 额外保险：window.onload 再次确认（所有资源加载完成后）
+window.addEventListener('load', function() {
+    console.log('[DataMind] window.load 触发，再次确认 dataset-status');
+    var statusEl = document.getElementById('dataset-status');
+    if (statusEl && !statusEl.classList.contains('loaded')) {
+        console.log('[DataMind] window.load: 状态未恢复，再次尝试');
+        restoreDatasetStatus();
+    }
+});
